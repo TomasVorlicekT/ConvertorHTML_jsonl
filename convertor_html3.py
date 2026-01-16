@@ -28,7 +28,7 @@ def format_content(text):
     if not text: return ""
     safe_text = html.escape(text)
 
-    # 1. Hide Code Blocks
+    # 1. Hide Code Blocks (preserve formatting)
     code_blocks = {}
     def store_code_block(match):
         key = f"__CODE_BLOCK_{len(code_blocks)}__"
@@ -40,26 +40,37 @@ def format_content(text):
 
     safe_text = re.sub(r'```(\w+)?\n?(.*?)```', store_code_block, safe_text, flags=re.DOTALL)
 
-    # 2. Compact Mode & Overrides
+    # 2. COLLAPSIBLE CONTEXT LOGIC (New Feature)
+    # Looks for "Context from my IDE setup" and captures everything until "My request for Codex"
+    # Wraps it in <details> tags.
+    # regex flags: DOTALL (dot matches newline) | MULTILINE (^ matches start of line)
+    safe_text = re.sub(
+        r'(?ms)(^#+\s*Context from my IDE setup:)\s*(.*?)(?=^#+\s*My request for Codex:)',
+        r'<details><summary>Context from my IDE setup</summary>\n\2\n</details>\n',
+        safe_text,
+        flags=re.DOTALL | re.MULTILINE
+    )
+
+    # 3. Compact Mode & Overrides
     safe_text = re.sub(r'\n{2,}(?=#)', '\n', safe_text)
     safe_text = re.sub(r'\n{3,}', '\n\n', safe_text)
     safe_text = re.sub(r'(?m)^#+ My request for Codex:', r'<h2>👤❓ My request for Codex:</h2>', safe_text)
     
-    # 3. Headers & Formatting
+    # 4. Headers & Formatting
     safe_text = re.sub(r'(?m)^# (.*?)$', r'<h2>\1</h2>', safe_text)
     safe_text = re.sub(r'(?m)^## (.*?)$', r'<h3>\1</h3>', safe_text)
     safe_text = re.sub(r'(?m)^### (.*?)$', r'<h4>\1</h4>', safe_text)
     safe_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', safe_text)
     safe_text = re.sub(r'`([^`]+)`', r'<code class="inline-code">\1</code>', safe_text)
 
-    # 4. Restore Code
+    # 5. Restore Code
     for key, code_html in code_blocks.items():
         safe_text = safe_text.replace(key, code_html)
 
     return safe_text
 
 def get_html_header():
-    # Includes Sidebar + Drag Logic + Styles
+    # Includes Sidebar + Drag Logic + Styles + Details/Summary CSS
     return """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -100,7 +111,29 @@ def get_html_header():
         .role-user .role { color: #0056b3; }
         .role-assistant .role { color: #1e7e34; }
         
+        /* CONTENT & COLLAPSIBLE DETAILS */
         .content { white-space: pre-wrap; font-family: inherit; font-size: 1.05em; }
+        
+        details {
+            background-color: #fff;
+            border: 1px solid #dce2ea;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: #6c757d;
+            font-size: 0.95em;
+            outline: none;
+            user-select: none;
+        }
+        summary:hover { color: #333; }
+        details[open] { border-color: #b1b7c1; }
+        details[open] summary { margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; color: #333; }
+        
         .content h2 { margin-top: 25px; margin-bottom: 15px; font-size: 1.3em; font-weight: 700; color: #222; }
         .content h3 { margin-top: 15px; margin-bottom: 8px; font-size: 1.1em; font-weight: 600; color: #555; background: rgba(0,0,0,0.05); padding: 5px 12px; border-radius: 6px; display: inline-block; }
         
@@ -268,30 +301,25 @@ class BatchConverterGUI:
         # --- Top Section: Folder Selection ---
         top_frame = ttk.Frame(root, padding="10")
         top_frame.pack(fill=tk.X)
-        
         ttk.Label(top_frame, text="Log Folder:").pack(side=tk.LEFT)
         ttk.Entry(top_frame, textvariable=self.folder_path, width=50).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         ttk.Button(top_frame, text="Browse...", command=self.browse_folder).pack(side=tk.LEFT)
 
-        # --- Middle Section: The TortoiseGit-style List ---
+        # Middle Section (List)
         list_frame = ttk.Frame(root, padding="10")
         list_frame.pack(fill=tk.BOTH, expand=True)
-        
         # Treeview setup
         columns = ("filename", "status")
         self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="browse")
-        
         # Headers
         self.tree.heading("filename", text="File Name", anchor="w")
         self.tree.heading("status", text="Status", anchor="w")
-        
         # Column Config
         self.tree.column("filename", width=400)
         self.tree.column("status", width=150)
         
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
-        
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
@@ -302,10 +330,8 @@ class BatchConverterGUI:
         # --- Bottom Section: Actions ---
         btn_frame = ttk.Frame(root, padding="10")
         btn_frame.pack(fill=tk.X)
-        
         self.chk_all_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(btn_frame, text="Select All", variable=self.chk_all_var, command=self.toggle_all).pack(side=tk.LEFT)
-        
         ttk.Button(btn_frame, text="Start Conversion", command=self.start_batch).pack(side=tk.RIGHT)
 
     def browse_folder(self):
@@ -318,19 +344,13 @@ class BatchConverterGUI:
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.file_items = []
-        
         if not os.path.exists(folder): return
 
         for f in os.listdir(folder):
             if f.lower().endswith(".jsonl"):
                 full_path = os.path.join(folder, f)
                 item_id = self.tree.insert("", "end", values=(f"☑  {f}", "Waiting..."))
-                self.file_items.append({
-                    "checked": True,
-                    "name": f,
-                    "path": full_path,
-                    "id": item_id
-                })
+                self.file_items.append({"checked": True, "name": f, "path": full_path, "id": item_id})
 
     def toggle_check(self, event=None):
         selected_id = self.tree.focus()
