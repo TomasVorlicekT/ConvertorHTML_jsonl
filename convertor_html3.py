@@ -88,7 +88,7 @@ def format_content(text):
 def get_html_header(date_str=""):
     date_html = ""
     if date_str:
-        date_html = f'<div style="text-align: center; color: #888; margin-bottom: 30px; font-size: 2.0em; font-weight: 500;">{date_str}</div>'
+        date_html = f'<div style="text-align: center; color: #888; margin-bottom: 30px; font-size: 0.9em; font-weight: 500;">{date_str}</div>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -103,12 +103,13 @@ def get_html_header(date_str=""):
         .container {{ background: #fff; padding: 50px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); width: 100%; max-width: 900px; margin-left: 0; }}
         
         /* SIDEBAR */
-        .sidebar {{ position: fixed; top: 20px; left: 20px; width: 200px; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); z-index: 1000; overflow: hidden; }}
+        .sidebar {{ position: fixed; top: 20px; left: 20px; width: 220px; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); z-index: 1000; overflow: hidden; }}
         .sidebar-header {{ background: #f8f9fa; padding: 15px 20px; border-bottom: 1px solid #eee; cursor: move; user-select: none; }}
         .sidebar-header h3 {{ margin: 0; font-size: 1.1em; color: #333; }}
         .sidebar-content {{ padding: 15px 20px; }}
         .filter-group {{ display: flex; align-items: center; margin-bottom: 10px; cursor: pointer; }}
         .filter-group input {{ margin-right: 10px; transform: scale(1.2); cursor: pointer; }}
+        .filter-group label {{ cursor: pointer; font-size: 0.95em; }}
         
         @media (max-width: 1300px) {{
             .sidebar {{ position: static; width: 100%; margin-bottom: 20px; box-shadow: none; border: 1px solid #ddd; }}
@@ -119,45 +120,41 @@ def get_html_header(date_str=""):
         /* MESSAGES */
         .message {{ margin-bottom: 30px; padding: 30px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.05); }}
         .hidden {{ display: none !important; }}
-        .message.role-user {{ background-color: #f8f9fa; border-left: 6px solid #007bff; }}
+        
+        /* USER: Chat Messages (Event) - Standard Blue */
+        .message.role-user-chat {{ background-color: #f8f9fa; border-left: 6px solid #007bff; }}
+        
+        /* USER: Stream Logs (Response Item) - Dashed Blue + Darker Gray */
+        .message.role-user-log {{ background-color: #f1f3f5; border-left: 6px dashed #5da3f0; }}
+
+        /* ASSISTANT & OTHERS */
         .message.role-assistant {{ background-color: #f0f7ff; border-left: 6px solid #28a745; }}
         .message.role-developer {{ background-color: #fff4f4; border-left: 6px solid #dc3545; border: 1px dashed #eec; }}
+        
+        /* TOOLS & REASONING */
         .message.type-tool-call {{ background-color: #fff; border-left: 6px solid #d63384; }}
         .message.type-tool-output {{ background-color: #2d2d2d; color: #ccc; border-left: 6px solid #6c757d; padding: 15px; }}
         .message.type-reasoning {{ background-color: #fff; border-left: 6px solid #6c757d; }}
 
+        /* ICONS & TITLES */
         .role {{ font-size: 1.4em; font-weight: 700; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,0.1); display: flex; align-items: center; gap: 10px; }}
-        .role-user .role {{ color: #0056b3; }}
+        .role-user-chat .role {{ color: #0056b3; }}
+        .role-user-log .role {{ color: #5a7d9e; }}
         .role-assistant .role {{ color: #1e7e34; }}
         
-        .content {{ white-space: pre-wrap; font-family: inherit; font-size: 1.05em; }}
-        
-        details {{
-            background-color: #fff;
-            border: 1px solid #dce2ea;
-            border-radius: 8px;
-            padding: 10px 15px;
-            margin-bottom: 20px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        }}
-        summary {{
-            cursor: pointer;
-            font-weight: 600;
-            color: #6c757d;
-            font-size: 0.95em;
-            outline: none;
-            user-select: none;
-        }}
+        /* DETAILS & SUMMARY */
+        details {{ background-color: #fff; border: 1px solid #dce2ea; border-radius: 8px; padding: 10px 15px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
+        summary {{ cursor: pointer; font-weight: 600; color: #6c757d; font-size: 0.95em; outline: none; user-select: none; }}
         summary:hover {{ color: #333; }}
         details[open] {{ border-color: #b1b7c1; }}
         details[open] summary {{ margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; color: #333; }}
         
+        /* CONTENT & CODE */
+        .content {{ white-space: pre-wrap; font-family: inherit; font-size: 1.05em; }}
         .content h2 {{ margin-top: 25px; margin-bottom: 15px; font-size: 1.3em; font-weight: 700; color: #222; }}
         .content h3 {{ margin-top: 15px; margin-bottom: 8px; font-size: 1.1em; font-weight: 600; color: #555; background: rgba(0,0,0,0.05); padding: 5px 12px; border-radius: 6px; display: inline-block; }}
-        
         pre {{ background: #1e1e1e !important; color: #d4d4d4; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); overflow-x: auto; margin: 20px 0; font-size: 0.95em; }}
         .inline-code {{ background: #eef1f6; padding: 2px 6px; border-radius: 4px; color: #c7254e; font-size: 0.9em; border: 1px solid #dce2ea; }}
-        
         .reasoning-content {{ font-style: italic; color: #555; }}
         .reasoning-title {{ font-weight: bold; margin-bottom: 5px; display: block; font-style: normal; text-transform: uppercase; font-size: 0.8em; color: #6c757d; }}
         .tool-header {{ font-size: 0.9em; color: #d63384; font-weight: bold; margin-bottom: 5px; }}
@@ -169,7 +166,8 @@ def get_html_header(date_str=""):
 <div class="sidebar" id="draggable-sidebar">
     <div class="sidebar-header" id="sidebar-handle"><h3>🔍 Filters</h3></div>
     <div class="sidebar-content">
-        <div class="filter-group"><input type="checkbox" id="check-user" checked><label for="check-user">User</label></div>
+        <div class="filter-group"><input type="checkbox" id="check-user-chat" checked><label for="check-user-chat">User (Chat Messages)</label></div>
+        <div class="filter-group"><input type="checkbox" id="check-user-log"><label for="check-user-log">User (Stream Logs)</label></div>
         <div class="filter-group"><input type="checkbox" id="check-assistant" checked><label for="check-assistant">Assistant</label></div>
         <div class="filter-group"><input type="checkbox" id="check-reasoning" checked><label for="check-reasoning">Reasoning</label></div>
         <div class="filter-group"><input type="checkbox" id="check-tools" checked><label for="check-tools">Tool Calls</label></div>
@@ -192,8 +190,25 @@ def get_html_footer():
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script>
-    const filters = {'check-user':'role-user','check-assistant':'role-assistant','check-developer':'role-developer','check-reasoning':'type-reasoning','check-tools':'type-tool-call','check-tool-output':'type-tool-output'};
-    function applyFilters(){ for(const[id,cls] of Object.entries(filters)){ const cb=document.getElementById(id); const els=document.getElementsByClassName(cls); for(let el of els){ if(cb.checked) el.classList.remove('hidden'); else el.classList.add('hidden'); } } }
+    const filters = {
+        'check-user-chat': 'role-user-chat',
+        'check-user-log': 'role-user-log',
+        'check-assistant': 'role-assistant',
+        'check-developer': 'role-developer',
+        'check-reasoning': 'type-reasoning',
+        'check-tools': 'type-tool-call',
+        'check-tool-output': 'type-tool-output'
+    };
+    function applyFilters(){ 
+        for(const[id,cls] of Object.entries(filters)){ 
+            const cb=document.getElementById(id); 
+            const els=document.getElementsByClassName(cls); 
+            for(let el of els){ 
+                if(cb.checked) el.classList.remove('hidden'); 
+                else el.classList.add('hidden'); 
+            } 
+        } 
+    }
     for(const id in filters) document.getElementById(id).addEventListener('change',applyFilters);
     applyFilters();
 
@@ -208,18 +223,12 @@ def get_html_footer():
 """
 
 def get_session_date(lines):
-    """Finds the first valid timestamp in the lines."""
     for line in lines:
         try:
             data = json.loads(line)
-            # Check root timestamp
-            if "timestamp" in data:
-                return format_timestamp(data["timestamp"])
-            # Check payload timestamp if root is missing
-            if "payload" in data and "timestamp" in data["payload"]:
-                return format_timestamp(data["payload"]["timestamp"])
-        except:
-            continue
+            if "timestamp" in data: return format_timestamp(data["timestamp"])
+            if "payload" in data and "timestamp" in data["payload"]: return format_timestamp(data["payload"]["timestamp"])
+        except: continue
     return ""
 
 def convert_single_file(input_path):
@@ -229,10 +238,15 @@ def convert_single_file(input_path):
         with open(input_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         
-        # Extract Date
         session_date = get_session_date(lines)
         html_parts = [get_html_header(session_date)]
-        seen_hashes = set()
+        
+        # INDEPENDENT HASH SETS FOR USER
+        seen_hashes_events = set()
+        seen_hashes_stream = set()
+        # SHARED HASH SET FOR OTHERS (Assistant, Tools, etc. still dedup)
+        seen_hashes_other = set()
+        
         count = 0
 
         for line in lines:
@@ -244,34 +258,54 @@ def convert_single_file(input_path):
                 payload = data.get("payload", {})
                 
                 html_block = ""
-                css_class = ""
-
+                
                 # --- 1. EVENTS ---
                 if msg_type == "event_msg":
                     event_type = payload.get("type")
                     if event_type in ["agent_message", "user_message"]:
                         text = payload.get("message", "")
                         if text:
-                            if hash(text) in seen_hashes: continue
-                            seen_hashes.add(hash(text))
-                            role = "Assistant" if event_type == "agent_message" else "User"
-                            css_class = "role-assistant" if role == "Assistant" else "role-user"
-                            icon = "🤖" if role == "Assistant" else "👤"
+                            # User Events (Chat Messages) -> Independent Hash
+                            if event_type == "user_message":
+                                if hash(text) in seen_hashes_events: continue
+                                seen_hashes_events.add(hash(text))
+                                role, css_class, icon = "User", "role-user-chat", "👤"
+                            
+                            # Assistant Events -> Shared Hash
+                            else:
+                                if hash(text) in seen_hashes_other: continue
+                                seen_hashes_other.add(hash(text))
+                                role, css_class, icon = "Assistant", "role-assistant", "🤖"
+                                
                             html_block = f'<div class="message {css_class}"><div class="role">{icon} {role}</div><div class="content">{format_content(text)}</div></div>'
 
                 # --- 2. RESPONSE ITEMS ---
                 elif msg_type == "response_item":
                     item_type = payload.get("type")
+                    
                     if item_type == "message":
                         role = payload.get("role", "unknown").capitalize()
                         text = extract_text_content(payload.get("content"))
                         if text:
-                            if hash(text) in seen_hashes: continue
-                            seen_hashes.add(hash(text))
                             role_l = role.lower()
-                            if role_l == "user": css, ic = "role-user", "👤"
-                            elif role_l in ["assistant","model"]: css, ic = "role-assistant", "🤖"
-                            else: css, ic = "role-developer", "⚙️"
+                            
+                            # User Stream Logs -> Independent Hash
+                            if role_l == "user":
+                                if hash(text) in seen_hashes_stream: continue
+                                seen_hashes_stream.add(hash(text))
+                                css, ic = "role-user-log", "👤"
+                            
+                            # Assistant/Dev -> Shared Hash
+                            elif role_l in ["assistant","model"]:
+                                if hash(text) in seen_hashes_other: continue
+                                seen_hashes_other.add(hash(text))
+                                css, ic = "role-assistant", "🤖"
+                            else:
+                                # Developer messages often repeat, so we dedup them too
+                                if hash(text) in seen_hashes_other: continue
+                                seen_hashes_other.add(hash(text))
+                                css, ic = "role-developer", "⚙️"
+                                
                             html_block = f'<div class="message {css}"><div class="role">{ic} {role}</div><div class="content">{format_content(text)}</div></div>'
                     
                     elif item_type == "reasoning":
@@ -279,7 +313,6 @@ def convert_single_file(input_path):
                         if text:
                             html_block = f'<div class="message type-reasoning"><span class="reasoning-title">🧠 Reasoning</span><div class="reasoning-content">{format_content(text)}</div></div>'
 
-                    # STANDARD TOOL CALL
                     elif item_type == "function_call":
                         tool = payload.get("name", "unknown")
                         args = payload.get("arguments", "{}")
@@ -287,7 +320,6 @@ def convert_single_file(input_path):
                         except: pretty = str(args)
                         html_block = f'<div class="message type-tool-call"><div class="tool-header">🛠️ Tool Call: {html.escape(tool)}</div><pre><code class="language-json">{html.escape(pretty)}</code></pre></div>'
 
-                    # CUSTOM TOOL CALL (e.g. PATCH)
                     elif item_type == "custom_tool_call":
                         tool = payload.get("name", "unknown")
                         inp = payload.get("input", "")
@@ -308,19 +340,15 @@ def convert_single_file(input_path):
 
         html_parts.append(get_html_footer())
         
-        if count == 0:
-            return False, "Empty/Invalid Log"
-            
+        if count == 0: return False, "Empty/Invalid Log"
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write("".join(html_parts))
         return True, "Done"
-        
     except Exception as e:
         return False, str(e)
 
-
 # ==========================================
-# PART 2: THE GUI (BATCH PROCESSING)
+# PART 2: THE GUI
 # ==========================================
 
 class BatchConverterGUI:
@@ -329,27 +357,21 @@ class BatchConverterGUI:
         self.root.title("Codex Batch Converter")
         self.root.geometry("700x500")
         
-        # Variables
         self.folder_path = tk.StringVar()
-        self.file_items = []  # Stores (filename, fullpath, item_id)
+        self.file_items = []
 
-        # Top Section
         top_frame = ttk.Frame(root, padding="10")
         top_frame.pack(fill=tk.X)
         ttk.Label(top_frame, text="Log Folder:").pack(side=tk.LEFT)
         ttk.Entry(top_frame, textvariable=self.folder_path, width=50).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         ttk.Button(top_frame, text="Browse...", command=self.browse_folder).pack(side=tk.LEFT)
 
-        # Middle Section (List)
         list_frame = ttk.Frame(root, padding="10")
         list_frame.pack(fill=tk.BOTH, expand=True)
-        # Treeview setup
         columns = ("filename", "status")
         self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="browse")
-        # Headers
         self.tree.heading("filename", text="File Name", anchor="w")
         self.tree.heading("status", text="Status", anchor="w")
-        # Column Config
         self.tree.column("filename", width=400)
         self.tree.column("status", width=150)
         
@@ -358,11 +380,9 @@ class BatchConverterGUI:
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Bind double click to toggle check
         self.tree.bind("<Double-1>", self.toggle_check)
         self.tree.bind("<space>", self.toggle_check)
 
-        # Bottom Section
         btn_frame = ttk.Frame(root, padding="10")
         btn_frame.pack(fill=tk.X)
         self.chk_all_var = tk.BooleanVar(value=True)
