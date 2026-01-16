@@ -6,6 +6,7 @@ import re
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import threading
+from datetime import datetime
 
 # ==========================================
 # PART 1: THE CORE CONVERTER ENGINE (Logic)
@@ -24,11 +25,26 @@ def extract_text_content(content_data):
         return content_data
     return "".join(text_parts)
 
+def format_timestamp(iso_str):
+    """Converts ISO 8601 timestamp to European format DD.MM.YYYY HH:MM:SS"""
+    try:
+        # Handle 'Z' for UTC and ensure compatibility with older Python versions
+        if iso_str.endswith('Z'):
+            iso_str = iso_str[:-1]
+        # Truncate fractional seconds for cleaner display if present
+        if '.' in iso_str:
+            iso_str = iso_str.split('.')[0]
+            
+        dt = datetime.fromisoformat(iso_str)
+        return dt.strftime("%d.%m.%Y %H:%M:%S")
+    except Exception:
+        return iso_str # Return original if parsing fails
+
 def format_content(text):
     if not text: return ""
     safe_text = html.escape(text)
 
-    # 1. Hide Code Blocks (preserve formatting)
+    # 1. Hide Code Blocks
     code_blocks = {}
     def store_code_block(match):
         key = f"__CODE_BLOCK_{len(code_blocks)}__"
@@ -40,7 +56,7 @@ def format_content(text):
 
     safe_text = re.sub(r'```(\w+)?\n?(.*?)```', store_code_block, safe_text, flags=re.DOTALL)
 
-    # 2. COLLAPSIBLE CONTEXT LOGIC (New Feature)
+    # 2. COLLAPSIBLE CONTEXT LOGIC
     # Looks for "Context from my IDE setup" and captures everything until "My request for Codex"
     # Wraps it in <details> tags.
     # regex flags: DOTALL (dot matches newline) | MULTILINE (^ matches start of line)
@@ -69,9 +85,12 @@ def format_content(text):
 
     return safe_text
 
-def get_html_header():
-    # Includes Sidebar + Drag Logic + Styles + Details/Summary CSS
-    return """<!DOCTYPE html>
+def get_html_header(date_str=""):
+    date_html = ""
+    if date_str:
+        date_html = f'<div style="text-align: center; color: #888; margin-bottom: 30px; font-size: 2.0em; font-weight: 500;">{date_str}</div>'
+
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -79,71 +98,70 @@ def get_html_header():
     <title>Codex Session Log</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; margin: 0; padding: 0; background-color: #e9ecef; color: #333; }
-        .wrapper { display: flex; justify-content: center; padding: 20px; }
-        .container { background: #fff; padding: 50px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); width: 100%; max-width: 900px; margin-left: 0; }
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; margin: 0; padding: 0; background-color: #e9ecef; color: #333; }}
+        .wrapper {{ display: flex; justify-content: center; padding: 20px; }}
+        .container {{ background: #fff; padding: 50px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); width: 100%; max-width: 900px; margin-left: 0; }}
         
         /* SIDEBAR */
-        .sidebar { position: fixed; top: 20px; left: 20px; width: 200px; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); z-index: 1000; overflow: hidden; }
-        .sidebar-header { background: #f8f9fa; padding: 15px 20px; border-bottom: 1px solid #eee; cursor: move; user-select: none; }
-        .sidebar-header h3 { margin: 0; font-size: 1.1em; color: #333; }
-        .sidebar-content { padding: 15px 20px; }
-        .filter-group { display: flex; align-items: center; margin-bottom: 10px; cursor: pointer; }
-        .filter-group input { margin-right: 10px; transform: scale(1.2); cursor: pointer; }
+        .sidebar {{ position: fixed; top: 20px; left: 20px; width: 200px; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); z-index: 1000; overflow: hidden; }}
+        .sidebar-header {{ background: #f8f9fa; padding: 15px 20px; border-bottom: 1px solid #eee; cursor: move; user-select: none; }}
+        .sidebar-header h3 {{ margin: 0; font-size: 1.1em; color: #333; }}
+        .sidebar-content {{ padding: 15px 20px; }}
+        .filter-group {{ display: flex; align-items: center; margin-bottom: 10px; cursor: pointer; }}
+        .filter-group input {{ margin-right: 10px; transform: scale(1.2); cursor: pointer; }}
         
-        @media (max-width: 1300px) {
-            .sidebar { position: static; width: 100%; margin-bottom: 20px; box-shadow: none; border: 1px solid #ddd; }
-            .sidebar-header { cursor: default; }
-            .wrapper { flex-direction: column; align-items: center; }
-        }
+        @media (max-width: 1300px) {{
+            .sidebar {{ position: static; width: 100%; margin-bottom: 20px; box-shadow: none; border: 1px solid #ddd; }}
+            .sidebar-header {{ cursor: default; }}
+            .wrapper {{ flex-direction: column; align-items: center; }}
+        }}
 
         /* MESSAGES */
-        .message { margin-bottom: 30px; padding: 30px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.05); }
-        .hidden { display: none !important; }
-        .message.role-user { background-color: #f8f9fa; border-left: 6px solid #007bff; }
-        .message.role-assistant { background-color: #f0f7ff; border-left: 6px solid #28a745; }
-        .message.role-developer { background-color: #fff4f4; border-left: 6px solid #dc3545; border: 1px dashed #eec; }
-        .message.type-tool-call { background-color: #fff; border-left: 6px solid #d63384; }
-        .message.type-tool-output { background-color: #2d2d2d; color: #ccc; border-left: 6px solid #6c757d; padding: 15px; }
-        .message.type-reasoning { background-color: #fff; border-left: 6px solid #6c757d; }
+        .message {{ margin-bottom: 30px; padding: 30px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.05); }}
+        .hidden {{ display: none !important; }}
+        .message.role-user {{ background-color: #f8f9fa; border-left: 6px solid #007bff; }}
+        .message.role-assistant {{ background-color: #f0f7ff; border-left: 6px solid #28a745; }}
+        .message.role-developer {{ background-color: #fff4f4; border-left: 6px solid #dc3545; border: 1px dashed #eec; }}
+        .message.type-tool-call {{ background-color: #fff; border-left: 6px solid #d63384; }}
+        .message.type-tool-output {{ background-color: #2d2d2d; color: #ccc; border-left: 6px solid #6c757d; padding: 15px; }}
+        .message.type-reasoning {{ background-color: #fff; border-left: 6px solid #6c757d; }}
 
-        .role { font-size: 1.4em; font-weight: 700; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,0.1); display: flex; align-items: center; gap: 10px; }
-        .role-user .role { color: #0056b3; }
-        .role-assistant .role { color: #1e7e34; }
+        .role {{ font-size: 1.4em; font-weight: 700; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,0.1); display: flex; align-items: center; gap: 10px; }}
+        .role-user .role {{ color: #0056b3; }}
+        .role-assistant .role {{ color: #1e7e34; }}
         
-        /* CONTENT & COLLAPSIBLE DETAILS */
-        .content { white-space: pre-wrap; font-family: inherit; font-size: 1.05em; }
+        .content {{ white-space: pre-wrap; font-family: inherit; font-size: 1.05em; }}
         
-        details {
+        details {{
             background-color: #fff;
             border: 1px solid #dce2ea;
             border-radius: 8px;
             padding: 10px 15px;
             margin-bottom: 20px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        }
-        summary {
+        }}
+        summary {{
             cursor: pointer;
             font-weight: 600;
             color: #6c757d;
             font-size: 0.95em;
             outline: none;
             user-select: none;
-        }
-        summary:hover { color: #333; }
-        details[open] { border-color: #b1b7c1; }
-        details[open] summary { margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; color: #333; }
+        }}
+        summary:hover {{ color: #333; }}
+        details[open] {{ border-color: #b1b7c1; }}
+        details[open] summary {{ margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; color: #333; }}
         
-        .content h2 { margin-top: 25px; margin-bottom: 15px; font-size: 1.3em; font-weight: 700; color: #222; }
-        .content h3 { margin-top: 15px; margin-bottom: 8px; font-size: 1.1em; font-weight: 600; color: #555; background: rgba(0,0,0,0.05); padding: 5px 12px; border-radius: 6px; display: inline-block; }
+        .content h2 {{ margin-top: 25px; margin-bottom: 15px; font-size: 1.3em; font-weight: 700; color: #222; }}
+        .content h3 {{ margin-top: 15px; margin-bottom: 8px; font-size: 1.1em; font-weight: 600; color: #555; background: rgba(0,0,0,0.05); padding: 5px 12px; border-radius: 6px; display: inline-block; }}
         
-        pre { background: #1e1e1e !important; color: #d4d4d4; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); overflow-x: auto; margin: 20px 0; font-size: 0.95em; }
-        .inline-code { background: #eef1f6; padding: 2px 6px; border-radius: 4px; color: #c7254e; font-size: 0.9em; border: 1px solid #dce2ea; }
+        pre {{ background: #1e1e1e !important; color: #d4d4d4; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); overflow-x: auto; margin: 20px 0; font-size: 0.95em; }}
+        .inline-code {{ background: #eef1f6; padding: 2px 6px; border-radius: 4px; color: #c7254e; font-size: 0.9em; border: 1px solid #dce2ea; }}
         
-        .reasoning-content { font-style: italic; color: #555; }
-        .reasoning-title { font-weight: bold; margin-bottom: 5px; display: block; font-style: normal; text-transform: uppercase; font-size: 0.8em; color: #6c757d; }
-        .tool-header { font-size: 0.9em; color: #d63384; font-weight: bold; margin-bottom: 5px; }
-        .truncated { color: #dc3545; font-style: italic; font-size: 0.85em; margin-top: 5px; }
+        .reasoning-content {{ font-style: italic; color: #555; }}
+        .reasoning-title {{ font-weight: bold; margin-bottom: 5px; display: block; font-style: normal; text-transform: uppercase; font-size: 0.8em; color: #6c757d; }}
+        .tool-header {{ font-size: 0.9em; color: #d63384; font-weight: bold; margin-bottom: 5px; }}
+        .truncated {{ color: #dc3545; font-style: italic; font-size: 0.85em; margin-top: 5px; }}
     </style>
 </head>
 <body>
@@ -163,7 +181,8 @@ def get_html_header():
 
 <div class="wrapper">
 <div class="container">
-    <h1 style="text-align: center; color: #333; margin-bottom: 40px;">Codex Session Transcript</h1>
+    <h1 style="text-align: center; color: #333; margin-bottom: 10px;">Codex Session Transcript</h1>
+    {date_html}
 """
 
 def get_html_footer():
@@ -188,14 +207,31 @@ def get_html_footer():
 </html>
 """
 
+def get_session_date(lines):
+    """Finds the first valid timestamp in the lines."""
+    for line in lines:
+        try:
+            data = json.loads(line)
+            # Check root timestamp
+            if "timestamp" in data:
+                return format_timestamp(data["timestamp"])
+            # Check payload timestamp if root is missing
+            if "payload" in data and "timestamp" in data["payload"]:
+                return format_timestamp(data["payload"]["timestamp"])
+        except:
+            continue
+    return ""
+
 def convert_single_file(input_path):
     output_path = os.path.splitext(input_path)[0] + ".html"
     
     try:
         with open(input_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-            
-        html_parts = [get_html_header()]
+        
+        # Extract Date
+        session_date = get_session_date(lines)
+        html_parts = [get_html_header(session_date)]
         seen_hashes = set()
         count = 0
 
@@ -254,7 +290,6 @@ def convert_single_file(input_path):
                     # CUSTOM TOOL CALL (e.g. PATCH)
                     elif item_type == "custom_tool_call":
                         tool = payload.get("name", "unknown")
-                        # The diff content is usually in 'input'
                         inp = payload.get("input", "")
                         html_block = f'<div class="message type-tool-call"><div class="tool-header">🛠️ Tool Call: {html.escape(tool)}</div><pre><code class="language-diff">{html.escape(inp)}</code></pre></div>'
 
@@ -298,7 +333,7 @@ class BatchConverterGUI:
         self.folder_path = tk.StringVar()
         self.file_items = []  # Stores (filename, fullpath, item_id)
 
-        # --- Top Section: Folder Selection ---
+        # Top Section
         top_frame = ttk.Frame(root, padding="10")
         top_frame.pack(fill=tk.X)
         ttk.Label(top_frame, text="Log Folder:").pack(side=tk.LEFT)
@@ -327,7 +362,7 @@ class BatchConverterGUI:
         self.tree.bind("<Double-1>", self.toggle_check)
         self.tree.bind("<space>", self.toggle_check)
 
-        # --- Bottom Section: Actions ---
+        # Bottom Section
         btn_frame = ttk.Frame(root, padding="10")
         btn_frame.pack(fill=tk.X)
         self.chk_all_var = tk.BooleanVar(value=True)
