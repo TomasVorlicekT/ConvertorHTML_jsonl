@@ -95,7 +95,8 @@ def format_content(text):
 def get_html_header(date_str=""):
     date_html = ""
     if date_str:
-        date_html = f'<div style="text-align: center; color: #888; margin-bottom: 40px; font-size: 0.9em; font-weight: 500;">{date_str}</div>'
+        # Reduced bottom margin here because the separator adds its own spacing
+        date_html = f'<div style="text-align: center; color: #888; margin-bottom: 10px; font-size: 0.9em; font-weight: 500;">{date_str}</div>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -110,6 +111,16 @@ def get_html_header(date_str=""):
         /* --- LAYOUT --- */
         .wrapper {{ padding: 40px 20px; }}
         .container {{ width: 100%; max-width: 1200px; margin: 0 auto; }}
+        
+        /* HEADER SEPARATOR */
+        .header-separator {{
+            border: 0;
+            height: 1px;
+            /* Gradient: Transparent -> Gray -> Transparent */
+            background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0));
+            margin: 20px auto 50px auto; /* Generous spacing below */
+            width: 80%; /* Don't span full width for a cleaner look */
+        }}
         
         /* SIDEBAR */
         .sidebar {{ position: fixed; top: 20px; left: 20px; width: 220px; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); z-index: 1000; overflow: hidden; }}
@@ -126,8 +137,7 @@ def get_html_header(date_str=""):
         }}
 
         /* --- MESSAGES (Chat Bubbles) --- */
-        .message {{
-            width: 90%; /* Fixed percentage width for uniformity */
+        .message {{ 
             margin-bottom: 25px; 
             padding: 25px; 
             border-radius: 18px;
@@ -138,54 +148,29 @@ def get_html_header(date_str=""):
         }}
         .hidden {{ display: none !important; }}
         
-        /* === ALIGNMENT GROUPS === */
-
-        /* LEFT: Assistant, Developer, Tools, Reasoning */
-        .message.role-assistant, 
-        .message.role-developer, 
-        .message.type-tool-call, 
-        .message.type-tool-output, 
-        .message.type-reasoning {{
-            margin-right: auto; 
-            margin-left: 0;
-            border-top-left-radius: 4px; /* Sharp corner for Left side */
-        }}
-
-        /* RIGHT: User (Chat & Logs) */
+        /* RIGHT ALIGNMENT */
         .message.role-user-chat, 
         .message.role-user-log {{
+            width: 85%;
             margin-left: auto; 
             margin-right: 0;
-            border-top-right-radius: 4px; /* Sharp corner for Right side */
+            border-top-right-radius: 4px;
         }}
 
-        /* === INDIVIDUAL STYLES === */
-        
-        /* User Chat: Blue Border */
         .message.role-user-chat {{ background-color: #f8f9fa; border-right: 6px solid #007bff; }}
-        /* User Log: Dashed Blue */
         .message.role-user-log {{ background-color: #f3f6f9; border-right: 6px dashed #5da3f0; color: #555; }}
-
-        /* Assistant: Green */
         .message.role-assistant {{ background-color: #f0f7ff; border-left: 6px solid #28a745; }}
-        
-        /* Developer: Red */
         .message.role-developer {{ background-color: #fff4f4; border-left: 6px solid #dc3545; border: 1px dashed #eec; }}
-        
-        /* Tools & Reasoning */
         .message.type-tool-call {{ background-color: #fff; border-left: 6px solid #d63384; }}
         .message.type-tool-output {{ background-color: #2d2d2d; color: #ccc; border-left: 6px solid #6c757d; padding: 15px; border-radius: 12px; border-top-left-radius: 4px; }}
         .message.type-reasoning {{ background-color: #fff; border-left: 6px solid #6c757d; }}
 
-        /* ICONS & TITLES */
         .role {{ font-size: 1.4em; font-weight: 700; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,0.1); display: flex; align-items: center; gap: 10px; }}
-        
-
+        .role-user-chat .role, .role-user-log .role {{ flex-direction: row-reverse; justify-content: flex-start; border-bottom-color: rgba(0,0,0,0.05); }}
         .role-user-chat .role {{ color: #0056b3; }}
         .role-user-log .role {{ color: #5a7d9e; }}
         .role-assistant .role {{ color: #1e7e34; }}
         
-        /* DETAILS, CODE, ETC */
         details {{ background-color: #fff; border: 1px solid #dce2ea; border-radius: 8px; padding: 10px 15px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         summary {{ cursor: pointer; font-weight: 600; color: #6c757d; font-size: 0.95em; outline: none; user-select: none; }}
         summary:hover {{ color: #333; }}
@@ -224,6 +209,7 @@ def get_html_header(date_str=""):
 <div class="container">
     <h1 style="text-align: center; color: #333; margin-bottom: 10px;">Codex Session Transcript</h1>
     {date_html}
+    <div class="header-separator"></div>
 """
 
 def get_html_footer():
