@@ -46,16 +46,14 @@ def format_content(text):
     context_content = ""
     has_context = False
     
-    # Regex to capture Context section. 
+    # Regex to capture Context section until "My request" or end of string
     context_pattern = r'(?ms)(^#+\s*Context from my IDE setup:)(.*?)(?=^#+\s*My request for Codex:|\Z)'
     
     match = re.search(context_pattern, safe_text)
     if match:
         has_context = True
         context_content = match.group(2)
-        # CRITICAL FIX: Append "\n" to the placeholder. 
-        # This ensures the *next* header (My request) starts on a new line 
-        # so the regex anchor (^) can detect it.
+        # Append newline to placeholder to ensure next header anchor (^) works
         safe_text = safe_text.replace(match.group(0), context_placeholder + "\n")
 
     # --- STEP 2: PROCESS CODE BLOCKS ---
@@ -71,18 +69,15 @@ def format_content(text):
     safe_text = re.sub(r'```(\w+)?\n?(.*?)```', store_code_block, safe_text, flags=re.DOTALL)
 
     # --- STEP 3: FORMATTING ---
+    # Compact mode newlines
     safe_text = re.sub(r'\n{2,}(?=#)', '\n', safe_text)
     safe_text = re.sub(r'\n{3,}', '\n\n', safe_text)
     
-    # Specific Header: "My request for Codex"
-    # Updated to allow multiple spaces (\s+) and optional colon (:?)
-    safe_text = re.sub(r'(?m)^#+\s+My request for Codex:?', r'<h2>❓ My request for Codex:</h2>', safe_text)
-    
-    # Standard Headers
+    # Headers & Styles
+    safe_text = re.sub(r'(?m)^#+\s+My request for Codex:?', r'<h2>👤❓ My request for Codex:</h2>', safe_text)
     safe_text = re.sub(r'(?m)^# (.*?)$', r'<h2>\1</h2>', safe_text)
     safe_text = re.sub(r'(?m)^## (.*?)$', r'<h3>\1</h3>', safe_text)
     safe_text = re.sub(r'(?m)^### (.*?)$', r'<h4>\1</h4>', safe_text)
-    
     safe_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', safe_text)
     safe_text = re.sub(r'`([^`]+)`', r'<code class="inline-code">\1</code>', safe_text)
 
@@ -100,7 +95,7 @@ def format_content(text):
 def get_html_header(date_str=""):
     date_html = ""
     if date_str:
-        date_html = f'<div style="text-align: center; color: #888; margin-bottom: 30px; font-size: 0.9em; font-weight: 500;">{date_str}</div>'
+        date_html = f'<div style="text-align: center; color: #888; margin-bottom: 40px; font-size: 0.9em; font-weight: 500;">{date_str}</div>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -111,8 +106,10 @@ def get_html_header(date_str=""):
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; margin: 0; padding: 0; background-color: #e9ecef; color: #333; }}
-        .wrapper {{ display: flex; justify-content: center; padding: 20px; }}
-        .container {{ background: #fff; padding: 50px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); width: 100%; max-width: 900px; margin-left: 0; }}
+        
+        /* --- LAYOUT --- */
+        .wrapper {{ padding: 40px 20px; }}
+        .container {{ width: 100%; max-width: 1200px; margin: 0 auto; }}
         
         /* SIDEBAR */
         .sidebar {{ position: fixed; top: 20px; left: 20px; width: 220px; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); z-index: 1000; overflow: hidden; }}
@@ -123,42 +120,78 @@ def get_html_header(date_str=""):
         .filter-group input {{ margin-right: 10px; transform: scale(1.2); cursor: pointer; }}
         .filter-group label {{ cursor: pointer; font-size: 0.95em; }}
         
-        @media (max-width: 1300px) {{
+        @media (max-width: 1500px) {{
             .sidebar {{ position: static; width: 100%; margin-bottom: 20px; box-shadow: none; border: 1px solid #ddd; }}
             .sidebar-header {{ cursor: default; }}
-            .wrapper {{ flex-direction: column; align-items: center; }}
         }}
 
-        /* MESSAGES */
-        .message {{ margin-bottom: 30px; padding: 30px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.05); }}
+        /* --- MESSAGES (Chat Bubbles) --- */
+        .message {{
+            width: 90%; /* Fixed percentage width for uniformity */
+            margin-bottom: 25px; 
+            padding: 25px; 
+            border-radius: 18px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
+            background: #fff;
+            position: relative;
+            box-sizing: border-box;
+        }}
         .hidden {{ display: none !important; }}
         
-        .message.role-user-chat {{ background-color: #f8f9fa; border-left: 6px solid #007bff; }}
-        .message.role-user-log {{ background-color: #f1f3f5; border-left: 6px dashed #5da3f0; }}
+        /* === ALIGNMENT GROUPS === */
+
+        /* LEFT: Assistant, Developer, Tools, Reasoning */
+        .message.role-assistant, 
+        .message.role-developer, 
+        .message.type-tool-call, 
+        .message.type-tool-output, 
+        .message.type-reasoning {{
+            margin-right: auto; 
+            margin-left: 0;
+            border-top-left-radius: 4px; /* Sharp corner for Left side */
+        }}
+
+        /* RIGHT: User (Chat & Logs) */
+        .message.role-user-chat, 
+        .message.role-user-log {{
+            margin-left: auto; 
+            margin-right: 0;
+            border-top-right-radius: 4px; /* Sharp corner for Right side */
+        }}
+
+        /* === INDIVIDUAL STYLES === */
+        
+        /* User Chat: Blue Border */
+        .message.role-user-chat {{ background-color: #f8f9fa; border-right: 6px solid #007bff; }}
+        /* User Log: Dashed Blue */
+        .message.role-user-log {{ background-color: #f3f6f9; border-right: 6px dashed #5da3f0; color: #555; }}
+
+        /* Assistant: Green */
         .message.role-assistant {{ background-color: #f0f7ff; border-left: 6px solid #28a745; }}
+        
+        /* Developer: Red */
         .message.role-developer {{ background-color: #fff4f4; border-left: 6px solid #dc3545; border: 1px dashed #eec; }}
         
+        /* Tools & Reasoning */
         .message.type-tool-call {{ background-color: #fff; border-left: 6px solid #d63384; }}
-        .message.type-tool-output {{ background-color: #2d2d2d; color: #ccc; border-left: 6px solid #6c757d; padding: 15px; }}
+        .message.type-tool-output {{ background-color: #2d2d2d; color: #ccc; border-left: 6px solid #6c757d; padding: 15px; border-radius: 12px; border-top-left-radius: 4px; }}
         .message.type-reasoning {{ background-color: #fff; border-left: 6px solid #6c757d; }}
 
         /* ICONS & TITLES */
         .role {{ font-size: 1.4em; font-weight: 700; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,0.1); display: flex; align-items: center; gap: 10px; }}
+        
+
         .role-user-chat .role {{ color: #0056b3; }}
         .role-user-log .role {{ color: #5a7d9e; }}
         .role-assistant .role {{ color: #1e7e34; }}
         
-        /* DETAILS & SUMMARY */
+        /* DETAILS, CODE, ETC */
         details {{ background-color: #fff; border: 1px solid #dce2ea; border-radius: 8px; padding: 10px 15px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
         summary {{ cursor: pointer; font-weight: 600; color: #6c757d; font-size: 0.95em; outline: none; user-select: none; }}
         summary:hover {{ color: #333; }}
         details[open] {{ border-color: #b1b7c1; }}
         details[open] summary {{ margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; color: #333; }}
-        
-        /* CONTEXT CONTENT (Raw) */
         .context-content {{ font-family: "Consolas", "Monaco", monospace; font-size: 0.9em; color: #555; white-space: pre-wrap; }}
-
-        /* CONTENT & CODE */
         .content {{ white-space: pre-wrap; font-family: inherit; font-size: 1.05em; }}
         .content h2 {{ margin-top: 25px; margin-bottom: 15px; font-size: 1.3em; font-weight: 700; color: #222; }}
         .content h3 {{ margin-top: 15px; margin-bottom: 8px; font-size: 1.1em; font-weight: 600; color: #555; background: rgba(0,0,0,0.05); padding: 5px 12px; border-radius: 6px; display: inline-block; }}
