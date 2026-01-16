@@ -1,9 +1,18 @@
 import json
-import sys
 import os
+import sys
+from typing import Any
 
-def extract_text_content(content_data):
-    """Helper to extract text from the nested content list structure."""
+def extract_text_content(content_data: Any) -> str:
+    """Extract text from the nested content list structure.
+
+    Args:
+        content_data: Mixed content from the JSONL payload. Supported inputs are
+            a list of dicts with "type"/"text" keys or a plain string.
+
+    Returns:
+        Concatenated text content extracted from the input data.
+    """
     text_parts = []
     if isinstance(content_data, list):
         for item in content_data:
@@ -16,7 +25,13 @@ def extract_text_content(content_data):
         return content_data
     return "".join(text_parts)
 
-def convert_jsonl_to_md(input_path, output_path):
+def convert_jsonl_to_md(input_path: str, output_path: str) -> None:
+    """Convert a JSONL transcript into a readable Markdown transcript.
+
+    Args:
+        input_path: Path to the input JSONL file.
+        output_path: Path where the Markdown output is written.
+    """
     print(f"Reading from: {input_path}")
     
     if not os.path.exists(input_path):
