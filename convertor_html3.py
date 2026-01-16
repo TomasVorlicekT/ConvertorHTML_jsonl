@@ -156,10 +156,6 @@ def get_html_footer():
 """
 
 def convert_single_file(input_path):
-    """
-    Core conversion logic for a single file.
-    Returns (True, None) on success, or (False, error_message) on failure.
-    """
     output_path = os.path.splitext(input_path)[0] + ".html"
     
     try:
@@ -214,12 +210,20 @@ def convert_single_file(input_path):
                         if text:
                             html_block = f'<div class="message type-reasoning"><span class="reasoning-title">🧠 Reasoning</span><div class="reasoning-content">{format_content(text)}</div></div>'
 
+                    # STANDARD TOOL CALL
                     elif item_type == "function_call":
                         tool = payload.get("name", "unknown")
                         args = payload.get("arguments", "{}")
                         try: pretty = json.dumps(json.loads(args) if isinstance(args, str) else args, indent=2)
                         except: pretty = str(args)
                         html_block = f'<div class="message type-tool-call"><div class="tool-header">🛠️ Tool Call: {html.escape(tool)}</div><pre><code class="language-json">{html.escape(pretty)}</code></pre></div>'
+
+                    # CUSTOM TOOL CALL (e.g. PATCH)
+                    elif item_type == "custom_tool_call":
+                        tool = payload.get("name", "unknown")
+                        # The diff content is usually in 'input'
+                        inp = payload.get("input", "")
+                        html_block = f'<div class="message type-tool-call"><div class="tool-header">🛠️ Tool Call: {html.escape(tool)}</div><pre><code class="language-diff">{html.escape(inp)}</code></pre></div>'
 
                     elif item_type == "function_call_output":
                         out = payload.get("output", "")
@@ -285,12 +289,6 @@ class BatchConverterGUI:
         self.tree.column("filename", width=400)
         self.tree.column("status", width=150)
         
-        # Checkbox column emulation (We use tagging for visual checks)
-        # Note: Tkinter Treeview doesn't have native checkboxes. 
-        # We simulate them using a special column or Unicode icons in the filename.
-        # Here we will use a separate 'check' column logic for simplicity:
-        # Actually, let's use the first column as "Checked state + Filename" for simplicity
-        
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
         
@@ -317,22 +315,16 @@ class BatchConverterGUI:
             self.load_files(folder)
 
     def load_files(self, folder):
-        # Clear existing
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.file_items = []
         
         if not os.path.exists(folder): return
 
-        # Find .jsonl files
         for f in os.listdir(folder):
             if f.lower().endswith(".jsonl"):
                 full_path = os.path.join(folder, f)
-                # Insert item with "Checked" state by default
-                # We prepend a unicode checkbox symbol
                 item_id = self.tree.insert("", "end", values=(f"☑  {f}", "Waiting..."))
-                
-                # Store metadata: (checked_bool, filename, fullpath, item_id)
                 self.file_items.append({
                     "checked": True,
                     "name": f,
@@ -341,65 +333,40 @@ class BatchConverterGUI:
                 })
 
     def toggle_check(self, event=None):
-        """Toggles the checkbox state of the selected item"""
         selected_id = self.tree.focus()
         if not selected_id: return
-        
-        # Find the data object
         item_data = next((x for x in self.file_items if x["id"] == selected_id), None)
         if item_data:
-            # Toggle logic
             item_data["checked"] = not item_data["checked"]
-            
-            # Update visual text
             icon = "☑" if item_data["checked"] else "☐"
             name = item_data["name"]
-            
-            # Update Treeview
             current_status = self.tree.item(selected_id, "values")[1]
             self.tree.item(selected_id, values=(f"{icon}  {name}", current_status))
 
     def toggle_all(self):
         state = self.chk_all_var.get()
         icon = "☑" if state else "☐"
-        
         for item in self.file_items:
             item["checked"] = state
             current_status = self.tree.item(item["id"], "values")[1]
             self.tree.item(item["id"], values=(f"{icon}  {item['name']}", current_status))
 
     def start_batch(self):
-        # Filter only checked items
         to_process = [x for x in self.file_items if x["checked"]]
-        
         if not to_process:
             messagebox.showwarning("No Files", "No files selected for conversion.")
             return
-            
-        # Disable buttons (simple lock)
-        # (In a real app, you'd disable the button widget)
-        
-        # Process in thread to keep GUI responsive
         threading.Thread(target=self.process_files, args=(to_process,)).start()
 
     def process_files(self, files):
         for item in files:
-            # Update status to processing
             self.update_status(item["id"], "Converting...")
-            
-            # Run conversion
             success, msg = convert_single_file(item["path"])
-            
-            # Update result
             final_status = "✅ Done" if success else "❌ Error"
             self.update_status(item["id"], final_status)
-        
         messagebox.showinfo("Batch Complete", f"Finished processing {len(files)} files.")
 
     def update_status(self, item_id, status_text):
-        # Helper to update treeview from thread safely
-        # (Tkinter isn't perfectly thread-safe but this simple set usually works, 
-        # for robust apps use after())
         try:
             current_vals = self.tree.item(item_id, "values")
             self.tree.item(item_id, values=(current_vals[0], status_text))
