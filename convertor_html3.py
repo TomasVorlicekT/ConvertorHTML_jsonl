@@ -28,23 +28,37 @@ def extract_text_content(content_data):
 def format_timestamp(iso_str):
     """Converts ISO 8601 timestamp to European format DD.MM.YYYY HH:MM:SS"""
     try:
-        # Handle 'Z' for UTC and ensure compatibility with older Python versions
         if iso_str.endswith('Z'):
             iso_str = iso_str[:-1]
-        # Truncate fractional seconds for cleaner display if present
         if '.' in iso_str:
             iso_str = iso_str.split('.')[0]
-            
         dt = datetime.fromisoformat(iso_str)
         return dt.strftime("%d.%m.%Y %H:%M:%S")
     except Exception:
-        return iso_str # Return original if parsing fails
+        return iso_str
 
 def format_content(text):
     if not text: return ""
     safe_text = html.escape(text)
 
-    # 1. Hide Code Blocks
+    # --- STEP 1: PROTECT CONTEXT SECTION ---
+    context_placeholder = "__CONTEXT_PROTECTED__"
+    context_content = ""
+    has_context = False
+    
+    # Regex to capture Context section. 
+    context_pattern = r'(?ms)(^#+\s*Context from my IDE setup:)(.*?)(?=^#+\s*My request for Codex:|\Z)'
+    
+    match = re.search(context_pattern, safe_text)
+    if match:
+        has_context = True
+        context_content = match.group(2)
+        # CRITICAL FIX: Append "\n" to the placeholder. 
+        # This ensures the *next* header (My request) starts on a new line 
+        # so the regex anchor (^) can detect it.
+        safe_text = safe_text.replace(match.group(0), context_placeholder + "\n")
+
+    # --- STEP 2: PROCESS CODE BLOCKS ---
     code_blocks = {}
     def store_code_block(match):
         key = f"__CODE_BLOCK_{len(code_blocks)}__"
@@ -56,32 +70,30 @@ def format_content(text):
 
     safe_text = re.sub(r'```(\w+)?\n?(.*?)```', store_code_block, safe_text, flags=re.DOTALL)
 
-    # 2. COLLAPSIBLE CONTEXT LOGIC
-    # Looks for "Context from my IDE setup" and captures everything until "My request for Codex"
-    # Wraps it in <details> tags.
-    # regex flags: DOTALL (dot matches newline) | MULTILINE (^ matches start of line)
-    safe_text = re.sub(
-        r'(?ms)(^#+\s*Context from my IDE setup:)\s*(.*?)(?=^#+\s*My request for Codex:)',
-        r'<details><summary>Context from my IDE setup</summary>\n\2\n</details>\n',
-        safe_text,
-        flags=re.DOTALL | re.MULTILINE
-    )
-
-    # 3. Compact Mode & Overrides
+    # --- STEP 3: FORMATTING ---
     safe_text = re.sub(r'\n{2,}(?=#)', '\n', safe_text)
     safe_text = re.sub(r'\n{3,}', '\n\n', safe_text)
-    safe_text = re.sub(r'(?m)^#+ My request for Codex:', r'<h2>👤❓ My request for Codex:</h2>', safe_text)
     
-    # 4. Headers & Formatting
+    # Specific Header: "My request for Codex"
+    # Updated to allow multiple spaces (\s+) and optional colon (:?)
+    safe_text = re.sub(r'(?m)^#+\s+My request for Codex:?', r'<h2>❓ My request for Codex:</h2>', safe_text)
+    
+    # Standard Headers
     safe_text = re.sub(r'(?m)^# (.*?)$', r'<h2>\1</h2>', safe_text)
     safe_text = re.sub(r'(?m)^## (.*?)$', r'<h3>\1</h3>', safe_text)
     safe_text = re.sub(r'(?m)^### (.*?)$', r'<h4>\1</h4>', safe_text)
+    
     safe_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', safe_text)
     safe_text = re.sub(r'`([^`]+)`', r'<code class="inline-code">\1</code>', safe_text)
 
-    # 5. Restore Code
+    # --- STEP 4: RESTORE CODE BLOCKS ---
     for key, code_html in code_blocks.items():
         safe_text = safe_text.replace(key, code_html)
+
+    # --- STEP 5: RESTORE CONTEXT ---
+    if has_context:
+        details_html = f'<details><summary>Context from my IDE setup</summary>\n<div class="context-content">{context_content}</div>\n</details>\n'
+        safe_text = safe_text.replace(context_placeholder, details_html)
 
     return safe_text
 
@@ -121,17 +133,11 @@ def get_html_header(date_str=""):
         .message {{ margin-bottom: 30px; padding: 30px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.05); }}
         .hidden {{ display: none !important; }}
         
-        /* USER: Chat Messages (Event) - Standard Blue */
         .message.role-user-chat {{ background-color: #f8f9fa; border-left: 6px solid #007bff; }}
-        
-        /* USER: Stream Logs (Response Item) - Dashed Blue + Darker Gray */
         .message.role-user-log {{ background-color: #f1f3f5; border-left: 6px dashed #5da3f0; }}
-
-        /* ASSISTANT & OTHERS */
         .message.role-assistant {{ background-color: #f0f7ff; border-left: 6px solid #28a745; }}
         .message.role-developer {{ background-color: #fff4f4; border-left: 6px solid #dc3545; border: 1px dashed #eec; }}
         
-        /* TOOLS & REASONING */
         .message.type-tool-call {{ background-color: #fff; border-left: 6px solid #d63384; }}
         .message.type-tool-output {{ background-color: #2d2d2d; color: #ccc; border-left: 6px solid #6c757d; padding: 15px; }}
         .message.type-reasoning {{ background-color: #fff; border-left: 6px solid #6c757d; }}
@@ -149,10 +155,14 @@ def get_html_header(date_str=""):
         details[open] {{ border-color: #b1b7c1; }}
         details[open] summary {{ margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; color: #333; }}
         
+        /* CONTEXT CONTENT (Raw) */
+        .context-content {{ font-family: "Consolas", "Monaco", monospace; font-size: 0.9em; color: #555; white-space: pre-wrap; }}
+
         /* CONTENT & CODE */
         .content {{ white-space: pre-wrap; font-family: inherit; font-size: 1.05em; }}
         .content h2 {{ margin-top: 25px; margin-bottom: 15px; font-size: 1.3em; font-weight: 700; color: #222; }}
         .content h3 {{ margin-top: 15px; margin-bottom: 8px; font-size: 1.1em; font-weight: 600; color: #555; background: rgba(0,0,0,0.05); padding: 5px 12px; border-radius: 6px; display: inline-block; }}
+        .content h4 {{ margin-top: 10px; font-size: 1em; font-weight: 600; color: #666; }}
         pre {{ background: #1e1e1e !important; color: #d4d4d4; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); overflow-x: auto; margin: 20px 0; font-size: 0.95em; }}
         .inline-code {{ background: #eef1f6; padding: 2px 6px; border-radius: 4px; color: #c7254e; font-size: 0.9em; border: 1px solid #dce2ea; }}
         .reasoning-content {{ font-style: italic; color: #555; }}
@@ -241,10 +251,9 @@ def convert_single_file(input_path):
         session_date = get_session_date(lines)
         html_parts = [get_html_header(session_date)]
         
-        # INDEPENDENT HASH SETS FOR USER
+        # INDEPENDENT HASH SETS
         seen_hashes_events = set()
         seen_hashes_stream = set()
-        # SHARED HASH SET FOR OTHERS (Assistant, Tools, etc. still dedup)
         seen_hashes_other = set()
         
         count = 0
@@ -259,19 +268,18 @@ def convert_single_file(input_path):
                 
                 html_block = ""
                 
-                # --- 1. EVENTS ---
+                # --- EVENTS ---
                 if msg_type == "event_msg":
                     event_type = payload.get("type")
                     if event_type in ["agent_message", "user_message"]:
                         text = payload.get("message", "")
                         if text:
-                            # User Events (Chat Messages) -> Independent Hash
+                            # User Events -> Chat
                             if event_type == "user_message":
                                 if hash(text) in seen_hashes_events: continue
                                 seen_hashes_events.add(hash(text))
                                 role, css_class, icon = "User", "role-user-chat", "👤"
-                            
-                            # Assistant Events -> Shared Hash
+                            # Assistant Events
                             else:
                                 if hash(text) in seen_hashes_other: continue
                                 seen_hashes_other.add(hash(text))
@@ -279,7 +287,7 @@ def convert_single_file(input_path):
                                 
                             html_block = f'<div class="message {css_class}"><div class="role">{icon} {role}</div><div class="content">{format_content(text)}</div></div>'
 
-                # --- 2. RESPONSE ITEMS ---
+                # --- RESPONSE ITEMS ---
                 elif msg_type == "response_item":
                     item_type = payload.get("type")
                     
@@ -288,20 +296,17 @@ def convert_single_file(input_path):
                         text = extract_text_content(payload.get("content"))
                         if text:
                             role_l = role.lower()
-                            
-                            # User Stream Logs -> Independent Hash
+                            # User -> Stream Log
                             if role_l == "user":
                                 if hash(text) in seen_hashes_stream: continue
                                 seen_hashes_stream.add(hash(text))
                                 css, ic = "role-user-log", "👤"
-                            
-                            # Assistant/Dev -> Shared Hash
+                            # Assistant -> Shared Hash
                             elif role_l in ["assistant","model"]:
                                 if hash(text) in seen_hashes_other: continue
                                 seen_hashes_other.add(hash(text))
                                 css, ic = "role-assistant", "🤖"
                             else:
-                                # Developer messages often repeat, so we dedup them too
                                 if hash(text) in seen_hashes_other: continue
                                 seen_hashes_other.add(hash(text))
                                 css, ic = "role-developer", "⚙️"
