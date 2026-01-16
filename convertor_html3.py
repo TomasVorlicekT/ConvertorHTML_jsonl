@@ -18,48 +18,42 @@ def extract_text_content(content_data):
     return "".join(text_parts)
 
 def format_content(text):
-    """
-    Parses Markdown (Headers, Bold, Code) into HTML.
-    Uses a placeholder strategy to prevent Markdown syntax inside code blocks
-    from being processed incorrectly.
-    """
     if not text:
         return ""
 
-    # 1. Escape HTML first (Security & Layout safety)
     safe_text = html.escape(text)
 
-    # Dictionary to store code blocks temporarily
+    # Dictionary to store code blocks
     code_blocks = {}
     
     def store_code_block(match):
         key = f"__CODE_BLOCK_{len(code_blocks)}__"
         lang = match.group(1) if match.group(1) else "text"
         content = match.group(2)
-        # Create the final HTML for this block
         code_html = f'<pre><code class="language-{lang}">{content}</code></pre>'
         code_blocks[key] = code_html
         return key
 
-    # 2. Extract Code Blocks and replace with placeholders
-    # Regex captures: ```(optional_lang)\n(content)```
+    # 1. Extract Code Blocks
     safe_text = re.sub(r'```(\w+)?\n?(.*?)```', store_code_block, safe_text, flags=re.DOTALL)
 
-    # 3. Process Markdown Headers (on the text outside code blocks)
-    # H1 (# ) - Mapped to H2 visually to fit message context
+    # 2. Whitespace Cleanup
+    safe_text = re.sub(r'\n{2,}(?=#)', '\n', safe_text)
+    safe_text = re.sub(r'\n{3,}', '\n\n', safe_text)
+
+    # --- SPECIFIC OVERRIDES ---
+    safe_text = re.sub(r'(?m)^#+ My request for Codex:', r'<h2>👤❓ My request for Codex:</h2>', safe_text)
+
+    # 3. Process Markdown Headers
     safe_text = re.sub(r'(?m)^# (.*?)$', r'<h2>\1</h2>', safe_text)
-    # H2 (## )
     safe_text = re.sub(r'(?m)^## (.*?)$', r'<h3>\1</h3>', safe_text)
-    # H3 (### )
     safe_text = re.sub(r'(?m)^### (.*?)$', r'<h4>\1</h4>', safe_text)
 
-    # 4. Process Bold Text (**text**)
+    # 4. Process Bold & Inline Code
     safe_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', safe_text)
-
-    # 5. Process Inline Code (`text`)
     safe_text = re.sub(r'`([^`]+)`', r'<code class="inline-code">\1</code>', safe_text)
 
-    # 6. Restore Code Blocks
+    # 5. Restore Code Blocks
     for key, code_html in code_blocks.items():
         safe_text = safe_text.replace(key, code_html)
 
@@ -74,31 +68,63 @@ def get_html_header():
     <title>Codex Session Log</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 20px; background-color: #f0f2f5; color: #333; }
-        .container { background: #fff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; max-width: 900px; margin: 0 auto; padding: 20px; background-color: #e9ecef; color: #333; }
+        .container { background: #fff; padding: 50px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
         
-        .message { margin-bottom: 30px; padding-bottom: 30px; border-bottom: 1px solid #eee; }
-        .message:last-child { border-bottom: none; }
-        
-        /* Roles */
-        .role { font-weight: 700; margin-bottom: 10px; font-size: 1.1em; display: flex; align-items: center; gap: 8px; }
-        .role.user { color: #007bff; }
-        .role.assistant { color: #28a745; }
+        /* --- MESSAGE BUBBLES --- */
+        .message { 
+            margin-bottom: 30px; 
+            padding: 30px; 
+            border-radius: 12px; 
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        /* User Bubble: Light Gray */
+        .message.user {
+            background-color: #f8f9fa; /* Light Gray */
+            border-left: 6px solid #007bff; /* Blue accent */
+        }
+
+        /* Assistant Bubble: Light Blue */
+        .message.assistant {
+            background-color: #f0f7ff; /* Very subtle blue */
+            border-left: 6px solid #28a745; /* Green accent */
+        }
+
+        /* Developer/Other: White/Neutral */
+        .message.developer, .message.system, .message.unknown {
+            background-color: #fff;
+            border: 1px dashed #ccc;
+        }
+
+        /* ROLES */
+        .role { 
+            font-size: 1.4em; 
+            font-weight: 700; 
+            margin-bottom: 15px; 
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+            display: flex; align-items: center; gap: 10px; 
+        }
+        .role.user { color: #0056b3; }
+        .role.assistant { color: #1e7e34; }
         .role.developer { color: #6c757d; }
         
-        /* Content & Headers */
-        .content { white-space: pre-wrap; font-family: inherit; }
-        .content h2 { margin-top: 20px; margin-bottom: 10px; font-size: 1.4em; border-bottom: 2px solid #f0f0f0; padding-bottom: 5px; color: #222; }
-        .content h3 { margin-top: 15px; margin-bottom: 8px; font-size: 1.2em; font-weight: 600; color: #444; }
-        .content h4 { margin-top: 15px; font-size: 1.1em; font-weight: 600; color: #555; }
+        /* CONTENT */
+        .content { white-space: pre-wrap; font-family: inherit; font-size: 1.05em; }
         
-        /* Code Envelope - The "Card" Look */
+        /* HEADERS */
+        .content h2 { margin-top: 25px; margin-bottom: 15px; font-size: 1.3em; font-weight: 700; color: #222; }
+        .content h3 { margin-top: 15px; margin-bottom: 8px; font-size: 1.1em; font-weight: 600; color: #555; background: rgba(0,0,0,0.05); padding: 5px 12px; border-radius: 6px; display: inline-block; }
+        .content h4 { margin-top: 10px; font-size: 1em; font-weight: 600; color: #666; }
+        
+        /* CODE BLOCKS */
         pre {
-            background: #1e1e1e !important; /* Force dark background */
+            background: #1e1e1e !important;
             color: #d4d4d4;
             padding: 20px;
-            border-radius: 10px;
-            border: 1px solid #333;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             overflow-x: auto;
             margin: 20px 0;
             font-size: 0.95em;
@@ -107,19 +133,17 @@ def get_html_header():
         code { font-family: "Consolas", "Monaco", "Courier New", monospace; }
         .inline-code { background: #eef1f6; padding: 2px 6px; border-radius: 4px; color: #c7254e; font-size: 0.9em; border: 1px solid #dce2ea; }
         
-        /* Reasoning */
-        .reasoning { background-color: #f8f9fa; border-left: 5px solid #6c757d; padding: 15px 20px; margin: 15px 0; font-style: italic; color: #555; border-radius: 0 8px 8px 0; }
+        /* REASONING */
+        .reasoning { background-color: #fff; border: 1px solid #e2e6ea; border-left: 5px solid #6c757d; padding: 15px 20px; margin: 20px 0; font-style: italic; color: #555; border-radius: 4px; }
         .reasoning-title { font-weight: bold; margin-bottom: 5px; display: block; font-style: normal; text-transform: uppercase; font-size: 0.8em; color: #6c757d; }
         
-        /* Truncation & Tools */
         .tool-header { font-size: 0.9em; color: #d63384; font-weight: bold; margin-bottom: 5px; }
         .truncated { color: #dc3545; font-style: italic; font-size: 0.85em; margin-top: 5px; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1 style="text-align: center; color: #333; margin-bottom: 30px;">Codex Session Transcript</h1>
-    <hr style="border: 0; border-top: 1px solid #eee; margin-bottom: 30px;">
+    <h1 style="text-align: center; color: #333; margin-bottom: 40px;">Codex Session Transcript</h1>
 """
 
 def get_html_footer():
@@ -170,8 +194,9 @@ def convert_jsonl_to_html(input_path, output_path):
                         
                         formatted_text = format_content(text)
                         
+                        # Added role_class to the main div
                         html_parts.append(f"""
-                        <div class="message">
+                        <div class="message {role_class}">
                             <div class="role {role_class}">{icon} {role_name}</div>
                             <div class="content">{formatted_text}</div>
                         </div>
@@ -201,8 +226,9 @@ def convert_jsonl_to_html(input_path, output_path):
 
                         formatted_text = format_content(text)
 
+                        # Added role_cls to the main div
                         html_parts.append(f"""
-                        <div class="message">
+                        <div class="message {role_cls}">
                             <div class="role {role_cls}">{icon} {role}</div>
                             <div class="content">{formatted_text}</div>
                         </div>
@@ -214,6 +240,7 @@ def convert_jsonl_to_html(input_path, output_path):
                     text = extract_text_content(summary)
                     if text:
                         formatted_text = format_content(text)
+                        # Reasoning doesn't get a user/assistant background, stays white/neutral
                         html_parts.append(f"""
                         <div class="message">
                             <div class="reasoning">
@@ -279,7 +306,7 @@ def convert_jsonl_to_html(input_path, output_path):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python codex_to_html_v3.py <input.jsonl> [output.html]")
+        print("Usage: python codex_to_html_v7.py <input.jsonl> [output.html]")
     else:
         input_file = sys.argv[1]
         output_file = sys.argv[2] if len(sys.argv) > 2 else input_file.rsplit('.', 1)[0] + ".html"
