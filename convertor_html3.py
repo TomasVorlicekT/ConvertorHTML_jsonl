@@ -3,6 +3,16 @@ Convert Codex JSONL logs to a styled HTML transcript.
 
 This module provides a core conversion engine and a Tkinter GUI that supports
 batch conversion of JSONL log files into a readable HTML format.
+
+Log structure notes:
+- event_msg entries represent chat-style messages (user/assistant) recorded as
+  high-level events in the log.
+- response_item entries represent the streamed response pipeline; user entries
+  there are typically stream logs, while assistant/tool/developer entries are
+  output content and tool traces.
+- The transcript preserves the original JSONL order; only the overview index
+  applies sorting, grouping sessions by folder path and listing entries in
+  descending timestamp order within each group.
 """
 
 import html
@@ -85,21 +95,21 @@ def extract_text_content(content_data):
     return "".join(text_parts)
 
 
-def _normalize_iso_timestamp(iso_str):
+def _normalize_iso_timestamp(iso_str: str):
     if not isinstance(iso_str, str):
         return ""
-    normalized = iso_str.rstrip("Z")
+    normalized = iso_str.rstrip("Z")                # Getting rid of the 'Zulu' = 'UTC' designation
     if "." in normalized:
-        normalized = normalized.split(".", 1)[0]
+        normalized = normalized.split(".", 1)[0]    # Getting rid of miliseconds - no value for the user
     return normalized
 
 
-def _parse_iso_datetime(iso_str):
+def _parse_iso_datetime(iso_str: str):
     normalized = _normalize_iso_timestamp(iso_str)
     if not normalized:
         return None
     try:
-        return datetime.fromisoformat(normalized)
+        return datetime.fromisoformat(normalized)  # Converts str from text into a Python object that represents a specific point in time
     except ValueError:
         return None
 
@@ -473,6 +483,20 @@ def get_session_date(lines):
 
 
 def _should_emit_text(text, seen_set):
+    """Determine if text is unique and should be included in the html output.
+
+    This function filters out empty strings and exact duplicates. It uses
+    hashing to track seen content, which is more memory-efficient
+    than storing full string copies in the set.
+
+    Args:
+        text (str): The string content to check.
+        seen_set (set): A set of integer hashes representing previously
+            processed messages. This set is modified in-place if the text is new.
+
+    Returns:
+        bool: True if the text is non-empty and has not been seen before and False otherwise.
+    """
     if not text:
         return False
     text_hash = hash(text)
@@ -604,13 +628,14 @@ def _parse_json_line(line):
         return None
 
 
-def _path_to_href(path):
-    href = path
-    if os.sep != "/":
-        href = href.replace(os.sep, "/")
-    if os.altsep:
-        href = href.replace(os.altsep, "/")
-    return href
+def _path_to_href(path: str) -> str:
+    """
+    Convert a file system path into a relative URL.
+    
+    On Windows, os.sep is \. On Linux/Mac, it is /.
+    We need to ensure everything is a forward slash for HTML.
+    """
+    return path.replace(os.sep, "/")
 
 
 def _get_session_timestamp(lines):
@@ -968,15 +993,14 @@ def convert_single_file(input_path, output_folder=None, input_root=None):
             lines = f.readlines()
 
         session_date = get_session_date(lines)
-        index_href = _path_to_href(os.path.relpath(os.path.join(output_folder, "codex_sessions_overview.html"), output_dir))
+        index_href = _path_to_href(os.path.relpath(os.path.join(output_folder, "codex_sessions_overview.html"), output_dir))  # Create hypertext reference back to Overview file
         html_parts = [get_html_header(session_date, index_href=index_href)]
 
-        # Separate hash sets keep duplicates from different streams independent.
-        seen_hashes_events = set()
-        seen_hashes_stream = set()
-        seen_hashes_other = set()
+        seen_hashes_events = set()  # hashes of event_msg chat text (user/assistant) to avoid duplicating the same chat line
+        seen_hashes_stream = set()  # hashes of response_item user stream text to suppress repeated user log fragments
+        seen_hashes_other = set()   # hashes of response_item assistant/tool/developer text to keep those outputs de-duplicated
 
-        count = 0
+        rendered_message_count = 0  # number of non-empty message blocks added to the html output
 
         for line in lines:
             line = line.strip()
@@ -1006,13 +1030,13 @@ def convert_single_file(input_path, output_folder=None, input_root=None):
 
                 if html_block:
                     html_parts.append(html_block)
-                    count += 1
+                    rendered_message_count += 1
             except Exception:
                 continue
 
         html_parts.append(get_html_footer())
 
-        if count == 0:
+        if rendered_message_count == 0:
             return False, "Empty/Invalid Log"
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write("".join(html_parts))
