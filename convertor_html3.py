@@ -129,7 +129,7 @@ def format_content(text):
 
     return safe_text
 
-def get_html_header(date_str="", index_href="index.html"):
+def get_html_header(date_str="", index_href="codex_sessions_overview.html"):
     """Build the HTML document header and top-of-page layout.
 
     Args:
@@ -241,8 +241,6 @@ def get_html_header(date_str="", index_href="index.html"):
 <div class="sidebar" id="draggable-sidebar">
     <div class="sidebar-header" id="sidebar-handle"><h3>🔍 Filters</h3></div>
     <div class="sidebar-content">
-        <div class="filter-group"><a class="index-link" href="{index_href}">&#127968; Overview</a></div>
-        <hr style="border: 0; border-top: 1px solid #eee;">
         <div class="filter-group"><input type="checkbox" id="check-user-chat" checked><label for="check-user-chat">User (Chat Messages)</label></div>
         <div class="filter-group"><input type="checkbox" id="check-user-log"><label for="check-user-log">User (Stream Logs)</label></div>
         <div class="filter-group"><input type="checkbox" id="check-assistant" checked><label for="check-assistant">Assistant</label></div>
@@ -251,6 +249,8 @@ def get_html_header(date_str="", index_href="index.html"):
         <hr style="border: 0; border-top: 1px solid #eee;">
         <div class="filter-group"><input type="checkbox" id="check-developer"><label for="check-developer">Developer / System</label></div>
         <div class="filter-group"><input type="checkbox" id="check-tool-output"><label for="check-tool-output">Tool Outputs</label></div>
+        <hr style="border: 0; border-top: 1px solid #eee;">
+        <div class="filter-group"><a class="index-link" href="{index_href}">&#127968; Overview</a></div>
     </div>
 </div>
 
@@ -648,7 +648,7 @@ def write_index_html_for_folder(input_folder, output_folder):
     os.makedirs(output_folder, exist_ok=True)
     entries = _collect_index_entries(input_folder, output_folder)
     html_content = _build_index_html(entries)
-    output_path = os.path.join(output_folder, "index.html")
+    output_path = os.path.join(output_folder, "codex_sessions_overview.html")
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html_content)
     return output_path
@@ -680,7 +680,7 @@ def convert_single_file(input_path, output_folder=None, input_root=None):
             lines = f.readlines()
         
         session_date = get_session_date(lines)
-        index_href = _path_to_href(os.path.relpath(os.path.join(output_folder, "index.html"), output_dir))
+        index_href = _path_to_href(os.path.relpath(os.path.join(output_folder, "codex_sessions_overview.html"), output_dir))
         html_parts = [get_html_header(session_date, index_href=index_href)]
         
         # Separate hash sets keep duplicates from different streams independent.
@@ -744,6 +744,9 @@ class BatchConverterGUI:
         self.root = root
         self.root.title("Codex Batch Converter")
         self.root.geometry("700x500")
+        self.root.minsize(600, 400)
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_rowconfigure(2, weight=1)
         
         self.folder_path = tk.StringVar()
         self.output_folder_path = tk.StringVar()
@@ -751,25 +754,31 @@ class BatchConverterGUI:
         self.tree_items = {}
 
         top_frame = ttk.Frame(root, padding="10")
-        top_frame.pack(fill=tk.X)
+        top_frame.grid(row=0, column=0, sticky="ew")
         ttk.Label(top_frame, text="Log Folder:", width=15, anchor="w").pack(side=tk.LEFT)
-        ttk.Entry(top_frame, textvariable=self.folder_path, width=50).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        self.folder_entry = ttk.Entry(top_frame, textvariable=self.folder_path, width=50)
+        self.folder_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        self.folder_entry.bind("<FocusOut>", self.on_log_folder_change)
+        self.folder_entry.bind("<Return>", self.on_log_folder_change)
         ttk.Button(top_frame, text="Browse...", command=self.browse_folder).pack(side=tk.LEFT)
 
         output_frame = ttk.Frame(root, padding="10")
-        output_frame.pack(fill=tk.X)
+        output_frame.grid(row=1, column=0, sticky="ew")
         ttk.Label(output_frame, text="Output Folder:", width=15, anchor="w").pack(side=tk.LEFT)
-        ttk.Entry(output_frame, textvariable=self.output_folder_path, width=50).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        self.output_entry = ttk.Entry(output_frame, textvariable=self.output_folder_path, width=50)
+        self.output_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        self.output_entry.bind("<FocusOut>", self.on_output_folder_change)
+        self.output_entry.bind("<Return>", self.on_output_folder_change)
         ttk.Button(output_frame, text="Browse...", command=self.browse_output_folder).pack(side=tk.LEFT)
 
         list_frame = ttk.Frame(root, padding="10")
-        list_frame.pack(fill=tk.BOTH, expand=True)
+        list_frame.grid(row=2, column=0, sticky="nsew")
         columns = ("status",)
         self.tree = ttk.Treeview(list_frame, columns=columns, show="tree headings", selectmode="browse")
         self.tree.heading("#0", text="Name", anchor="w")
         self.tree.heading("status", text="Status", anchor="w")
         self.tree.column("#0", width=400)
-        self.tree.column("status", width=150)
+        self.tree.column("status", width=120, anchor="w", stretch=False)
         
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
@@ -780,7 +789,7 @@ class BatchConverterGUI:
         self.tree.bind("<space>", self.toggle_check)
 
         btn_frame = ttk.Frame(root, padding="10")
-        btn_frame.pack(fill=tk.X)
+        btn_frame.grid(row=3, column=0, sticky="ew")
         self.chk_all_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(btn_frame, text="Select All", variable=self.chk_all_var, command=self.toggle_all).pack(side=tk.LEFT)
         ttk.Button(btn_frame, text="Start Conversion", command=self.start_batch).pack(side=tk.RIGHT)
@@ -794,11 +803,26 @@ class BatchConverterGUI:
                 self.output_folder_path.set(folder)
             self.load_files(folder)
 
+    def on_log_folder_change(self, event=None):
+        """Handle manual edits to the log folder entry."""
+        folder = self.folder_path.get().strip()
+        if not folder or not os.path.exists(folder):
+            return
+        if not self.output_folder_custom:
+            self.output_folder_path.set(folder)
+        self.load_files(folder)
+
     def browse_output_folder(self):
         """Prompt for an output folder."""
         folder = filedialog.askdirectory()
         if folder:
             self.output_folder_path.set(folder)
+            self.output_folder_custom = True
+
+    def on_output_folder_change(self, event=None):
+        """Handle manual edits to the output folder entry."""
+        folder = self.output_folder_path.get().strip()
+        if folder:
             self.output_folder_custom = True
 
 
