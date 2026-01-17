@@ -15,8 +15,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 DATE_FORMAT = "%d.%m.%Y %H:%M:%S"
-TOOL_OUTPUT_TRUNCATE_LIMIT = 4000
-PROMPT_TRUNCATE_LIMIT = 300
+TOOL_OUTPUT_TRUNCATE_LIMIT = 4000   # Tool Output can be large, 4000 chosen as a reasonable middle-ground
+PROMPT_TRUNCATE_LIMIT = 300         # Limit used in the Overview table
 
 TEXT_BLOCK_TYPES = {"input_text", "output_text", "summary_text", "text"}
 
@@ -58,6 +58,7 @@ MY_REQUEST_HEADER_REPLACEMENT = f"<h2>{ICON_USER_REQUEST} My request for Codex:<
 # PART 1: THE CORE CONVERTER ENGINE (Logic)
 # ==========================================
 
+
 def extract_text_content(content_data):
     """Extract textual content from nested message structures.
 
@@ -78,6 +79,7 @@ def extract_text_content(content_data):
             text_parts.append(item.get("text", ""))
     return "".join(text_parts)
 
+
 def _normalize_iso_timestamp(iso_str):
     if not isinstance(iso_str, str):
         return ""
@@ -85,6 +87,7 @@ def _normalize_iso_timestamp(iso_str):
     if "." in normalized:
         normalized = normalized.split(".", 1)[0]
     return normalized
+
 
 def _parse_iso_datetime(iso_str):
     normalized = _normalize_iso_timestamp(iso_str)
@@ -94,6 +97,7 @@ def _parse_iso_datetime(iso_str):
         return datetime.fromisoformat(normalized)
     except ValueError:
         return None
+
 
 def format_timestamp(iso_str):
     """Convert an ISO 8601 timestamp to DD.MM.YYYY HH:MM:SS.
@@ -110,6 +114,7 @@ def format_timestamp(iso_str):
     dt = _parse_iso_datetime(iso_str)
     return dt.strftime(DATE_FORMAT) if dt else iso_str
 
+
 def _extract_context_block(text):
     match = CONTEXT_SECTION_PATTERN.search(text)
     if not match:
@@ -117,6 +122,7 @@ def _extract_context_block(text):
     context_content = match.group(2)
     replaced_text = text[:match.start()] + CONTEXT_PLACEHOLDER + "\n" + text[match.end():]
     return replaced_text, context_content
+
 
 def _extract_code_blocks(text):
     code_blocks = {}
@@ -130,6 +136,7 @@ def _extract_code_blocks(text):
 
     return CODE_BLOCK_PATTERN.sub(store_code_block, text), code_blocks
 
+
 def _apply_markdown_formatting(text):
     text = NEWLINES_BEFORE_HEADER_PATTERN.sub("\n", text)
     text = NEWLINES_PATTERN.sub("\n\n", text)
@@ -140,12 +147,14 @@ def _apply_markdown_formatting(text):
     text = INLINE_CODE_PATTERN.sub(r'<code class="inline-code">\1</code>', text)
     return text
 
+
 def _wrap_context_block(context_content):
     return (
         "<details><summary>Context from my IDE setup</summary>\n"
         f"<div class=\"context-content\">{context_content}</div>\n"
         "</details>\n"
     )
+
 
 def format_content(text):
     """Render message content as safe, styled HTML.
@@ -178,6 +187,7 @@ def format_content(text):
         )
 
     return escaped_text
+
 
 def get_html_header(date_str="", index_href="codex_sessions_overview.html"):
     """Build the HTML document header and top-of-page layout.
@@ -394,6 +404,7 @@ def get_html_header(date_str="", index_href="codex_sessions_overview.html"):
     <div class="header-separator"></div>
 """
 
+
 def get_html_footer():
     """Return the HTML footer and JavaScript for UI interactivity."""
     return """
@@ -434,6 +445,7 @@ def get_html_footer():
 </html>
 """
 
+
 def get_session_date(lines):
     """Extract the first available timestamp from JSONL lines.
 
@@ -454,6 +466,7 @@ def get_session_date(lines):
             return format_timestamp(payload["timestamp"])
     return ""
 
+
 def _should_emit_text(text, seen_set):
     if not text:
         return False
@@ -463,6 +476,7 @@ def _should_emit_text(text, seen_set):
     seen_set.add(text_hash)
     return True
 
+
 def _build_message_html(role, css_class, icon, text):
     return (
         f'<div class="message {css_class}">'
@@ -470,6 +484,7 @@ def _build_message_html(role, css_class, icon, text):
         f'<div class="content">{format_content(text)}</div>'
         f'</div>'
     )
+
 
 def _build_reasoning_html(text):
     return (
@@ -479,12 +494,14 @@ def _build_reasoning_html(text):
         '</div>'
     )
 
+
 def _format_tool_args(args):
     try:
         parsed = json.loads(args) if isinstance(args, str) else args
         return json.dumps(parsed, indent=2)
     except Exception:
         return str(args)
+
 
 def _build_tool_call_html(tool, args, lang="json"):
     pretty = _format_tool_args(args)
@@ -495,6 +512,7 @@ def _build_tool_call_html(tool, args, lang="json"):
         '</div>'
     )
 
+
 def _build_custom_tool_call_html(tool, inp):
     return (
         '<div class="message type-tool-call">'
@@ -502,6 +520,7 @@ def _build_custom_tool_call_html(tool, inp):
         f'<pre><code class="language-diff">{html.escape(inp)}</code></pre>'
         '</div>'
     )
+
 
 def _build_tool_output_html(output):
     truncated_note = ""
@@ -515,6 +534,7 @@ def _build_tool_output_html(output):
         f'{truncated_note}'
         '</div>'
     )
+
 
 def _build_event_message(payload, seen_hashes_events, seen_hashes_other):
     event_type = payload.get("type")
@@ -530,6 +550,7 @@ def _build_event_message(payload, seen_hashes_events, seen_hashes_other):
     if not _should_emit_text(text, seen_hashes_other):
         return ""
     return _build_message_html("Assistant", "role-assistant", ICON_ASSISTANT, text)
+
 
 def _build_response_message(payload, seen_hashes_stream, seen_hashes_other):
     role = payload.get("role", "unknown").capitalize()
@@ -548,6 +569,7 @@ def _build_response_message(payload, seen_hashes_stream, seen_hashes_other):
     if not _should_emit_text(text, seen_hashes_other):
         return ""
     return _build_message_html(role, "role-developer", ICON_GEAR, text)
+
 
 def _build_response_item(payload, seen_hashes_stream, seen_hashes_other):
     item_type = payload.get("type")
@@ -569,11 +591,13 @@ def _build_response_item(payload, seen_hashes_stream, seen_hashes_other):
         return _build_tool_output_html(out)
     return ""
 
+
 def _parse_json_line(line):
     try:
         return json.loads(line)
     except Exception:
         return None
+
 
 def _path_to_href(path):
     href = path
@@ -582,6 +606,7 @@ def _path_to_href(path):
     if os.altsep:
         href = href.replace(os.altsep, "/")
     return href
+
 
 def _get_session_timestamp(lines):
     for line in lines:
@@ -599,6 +624,7 @@ def _get_session_timestamp(lines):
                 return ts
     return None
 
+
 def _get_first_prompt(lines):
     for line in lines:
         data = _parse_json_line(line)
@@ -613,6 +639,7 @@ def _get_first_prompt(lines):
                 return _extract_user_request_from_context(text)
     return ""
 
+
 def _extract_user_request_from_context(text):
     if "Context from my IDE setup" not in text:
         return text
@@ -621,10 +648,12 @@ def _extract_user_request_from_context(text):
         return text
     return match.group(1).strip()
 
+
 def _truncate_prompt(prompt, limit=PROMPT_TRUNCATE_LIMIT):
     if not prompt:
         return ""
     return prompt[:limit]
+
 
 def _collect_index_entries(input_folder, output_folder):
     entries = []
@@ -661,9 +690,11 @@ def _collect_index_entries(input_folder, output_folder):
     entries.sort(key=lambda e: e["timestamp"] or datetime.min, reverse=True)
     return entries
 
+
 def _split_rel_path(rel_path):
     parts = REL_PATH_SPLIT_PATTERN.split(rel_path)
     return [part for part in parts if part]
+
 
 def _build_index_tree(entries):
     root = {"name": "", "children": {}, "items": []}
@@ -681,12 +712,14 @@ def _build_index_tree(entries):
         node["items"].append(entry)
     return root
 
+
 def _sort_entries(entries):
     return sorted(
         entries,
         key=lambda e: e["timestamp"] or datetime.min,
         reverse=True,
     )
+
 
 def _render_entries_table(entries):
     if not entries:
@@ -707,6 +740,7 @@ def _render_entries_table(entries):
         + "</tbody></table>"
     )
 
+
 def _render_folder_sections(node, level=0):
     sections = []
     for name in sorted(node["children"]):
@@ -721,6 +755,7 @@ def _render_folder_sections(node, level=0):
             f'<details class="folder level-{level + 1}"><summary>{summary}</summary>{content}</details>'
         )
     return "".join(sections)
+
 
 def _build_index_html(entries):
     if not entries:
@@ -890,6 +925,7 @@ def _build_index_html(entries):
 </html>
 """
 
+
 def write_index_html_for_folder(input_folder, output_folder):
     os.makedirs(output_folder, exist_ok=True)
     entries = _collect_index_entries(input_folder, output_folder)
@@ -898,6 +934,7 @@ def write_index_html_for_folder(input_folder, output_folder):
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html_content)
     return output_path
+
 
 def convert_single_file(input_path, output_folder=None, input_root=None):
     """Convert a single JSONL log file into an HTML transcript.
@@ -919,21 +956,21 @@ def convert_single_file(input_path, output_folder=None, input_root=None):
     rel_base, _ = os.path.splitext(rel_path)
     output_path = os.path.join(output_folder, "converted_sessions", rel_base + ".html")
     output_dir = os.path.dirname(output_path)
-    
+
     try:
         os.makedirs(output_dir, exist_ok=True)
         with open(input_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-        
+
         session_date = get_session_date(lines)
         index_href = _path_to_href(os.path.relpath(os.path.join(output_folder, "codex_sessions_overview.html"), output_dir))
         html_parts = [get_html_header(session_date, index_href=index_href)]
-        
+
         # Separate hash sets keep duplicates from different streams independent.
         seen_hashes_events = set()
         seen_hashes_stream = set()
         seen_hashes_other = set()
-        
+
         count = 0
 
         for line in lines:
@@ -969,7 +1006,7 @@ def convert_single_file(input_path, output_folder=None, input_root=None):
                 continue
 
         html_parts.append(get_html_footer())
-        
+
         if count == 0:
             return False, "Empty/Invalid Log"
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -983,6 +1020,7 @@ def convert_single_file(input_path, output_folder=None, input_root=None):
 # PART 2: THE GUI
 # ==========================================
 
+
 class BatchConverterGUI:
     """Tkinter GUI for batch conversion of JSONL log files."""
     def __init__(self, root):
@@ -993,7 +1031,7 @@ class BatchConverterGUI:
         self.root.minsize(600, 400)
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(2, weight=1)
-        
+
         self.folder_path = tk.StringVar()
         self.output_folder_path = tk.StringVar()
         self.output_folder_custom = False
@@ -1025,12 +1063,12 @@ class BatchConverterGUI:
         self.tree.heading("status", text="Status", anchor="w")
         self.tree.column("#0", width=400)
         self.tree.column("status", width=120, anchor="w", stretch=False)
-        
+
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
+
         self.tree.bind("<Double-1>", self.toggle_check)
         self.tree.bind("<space>", self.toggle_check)
 
@@ -1087,7 +1125,6 @@ class BatchConverterGUI:
         else:
             box = "[ ]"
         return f"{box}  {name}"
-
 
     def _update_item_label(self, item_id):
         item = self.tree_items[item_id]
@@ -1240,6 +1277,7 @@ def create_gui():
     root = tk.Tk()
     app = BatchConverterGUI(root)
     root.mainloop()
+
 
 if __name__ == "__main__":
     create_gui()
