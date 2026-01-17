@@ -439,6 +439,14 @@ def _parse_json_line(line):
     except Exception:
         return None
 
+def _path_to_href(path):
+    href = path
+    if os.sep != "/":
+        href = href.replace(os.sep, "/")
+    if os.altsep:
+        href = href.replace(os.altsep, "/")
+    return href
+
 def _parse_iso_datetime(iso_str):
     try:
         if iso_str.endswith('Z'):
@@ -497,32 +505,36 @@ def _truncate_prompt(prompt, limit=300):
 
 def _collect_index_entries(input_folder, output_folder):
     entries = []
-    for filename in sorted(os.listdir(input_folder)):
-        if not filename.lower().endswith(".jsonl"):
-            continue
-        input_path = os.path.join(input_folder, filename)
-        output_filename = os.path.splitext(filename)[0] + ".html"
-        output_path = os.path.join(output_folder, "converted_sessions", output_filename)
-        if not os.path.exists(output_path):
-            continue
-        try:
-            with open(input_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-        except Exception:
-            continue
+    for dirpath, _, filenames in os.walk(input_folder):
+        for filename in filenames:
+            if not filename.lower().endswith(".jsonl"):
+                continue
+            input_path = os.path.join(dirpath, filename)
+            rel_path = os.path.relpath(input_path, input_folder)
+            rel_base, _ = os.path.splitext(rel_path)
+            output_path = os.path.join(output_folder, "converted_sessions", rel_base + ".html")
+            if not os.path.exists(output_path):
+                continue
+            try:
+                with open(input_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+            except Exception:
+                continue
 
-        date_display = get_session_date(lines)
-        timestamp = _get_session_timestamp(lines)
-        prompt = _truncate_prompt(_get_first_prompt(lines))
-        entries.append({
-            "date": date_display or "Unknown",
-            "prompt": prompt,
-            "href": f"converted_sessions/{output_filename}",
-            "timestamp": timestamp,
-            "file": filename,
-        })
+            date_display = get_session_date(lines)
+            timestamp = _get_session_timestamp(lines)
+            prompt = _truncate_prompt(_get_first_prompt(lines))
+            href = _path_to_href(os.path.relpath(output_path, output_folder))
+            entries.append({
+                "date": date_display or "Unknown",
+                "prompt": prompt,
+                "href": href,
+                "timestamp": timestamp,
+                "file": rel_path,
+                "rel_path": rel_path,
+            })
 
-    entries.sort(key=lambda e: e["file"])
+    entries.sort(key=lambda e: e["rel_path"])
     entries.sort(key=lambda e: e["timestamp"] or datetime.min, reverse=True)
     return entries
 
@@ -588,22 +600,26 @@ def write_index_html_for_folder(input_folder, output_folder):
         f.write(html_content)
     return output_path
 
-def convert_single_file(input_path, output_folder=None):
+def convert_single_file(input_path, output_folder=None, input_root=None):
     """Convert a single JSONL log file into an HTML transcript.
 
     Args:
         input_path: Path to the JSONL input file.
         output_folder: Destination folder for output files. Defaults to the
             input file's folder.
+        input_root: Root folder used to mirror input structure. Defaults to
+            the input file's folder.
 
     Returns:
         Tuple (success, message). On success, the output HTML is written
         under the output folder in the converted_sessions subfolder.
     """
     output_folder = output_folder or os.path.dirname(input_path)
-    output_dir = os.path.join(output_folder, "converted_sessions")
-    output_filename = os.path.splitext(os.path.basename(input_path))[0] + ".html"
-    output_path = os.path.join(output_dir, output_filename)
+    input_root = input_root or os.path.dirname(input_path)
+    rel_path = os.path.relpath(input_path, input_root)
+    rel_base, _ = os.path.splitext(rel_path)
+    output_path = os.path.join(output_folder, "converted_sessions", rel_base + ".html")
+    output_dir = os.path.dirname(output_path)
     
     try:
         os.makedirs(output_dir, exist_ok=True)
@@ -611,7 +627,8 @@ def convert_single_file(input_path, output_folder=None):
             lines = f.readlines()
         
         session_date = get_session_date(lines)
-        html_parts = [get_html_header(session_date, index_href="../index.html")]
+        index_href = _path_to_href(os.path.relpath(os.path.join(output_folder, "index.html"), output_dir))
+        html_parts = [get_html_header(session_date, index_href=index_href)]
         
         # Separate hash sets keep duplicates from different streams independent.
         seen_hashes_events = set()
@@ -658,7 +675,7 @@ def convert_single_file(input_path, output_folder=None):
             return False, "Empty/Invalid Log"
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write("".join(html_parts))
-        write_index_html_for_folder(os.path.dirname(input_path), output_folder)
+        write_index_html_for_folder(input_root, output_folder)
         return True, "Done"
     except Exception as e:
         return False, str(e)
@@ -678,7 +695,7 @@ class BatchConverterGUI:
         self.folder_path = tk.StringVar()
         self.output_folder_path = tk.StringVar()
         self.output_folder_custom = False
-        self.file_items = []
+        self.tree_items = {}
 
         top_frame = ttk.Frame(root, padding="10")
         top_frame.pack(fill=tk.X)
@@ -694,11 +711,11 @@ class BatchConverterGUI:
 
         list_frame = ttk.Frame(root, padding="10")
         list_frame.pack(fill=tk.BOTH, expand=True)
-        columns = ("filename", "status")
-        self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="browse")
-        self.tree.heading("filename", text="File Name", anchor="w")
+        columns = ("status",)
+        self.tree = ttk.Treeview(list_frame, columns=columns, show="tree headings", selectmode="browse")
+        self.tree.heading("#0", text="Name", anchor="w")
         self.tree.heading("status", text="Status", anchor="w")
-        self.tree.column("filename", width=400)
+        self.tree.column("#0", width=400)
         self.tree.column("status", width=150)
         
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
@@ -731,43 +748,140 @@ class BatchConverterGUI:
             self.output_folder_path.set(folder)
             self.output_folder_custom = True
 
+
+
+    def _find_jsonl_files(self, folder):
+        results = []
+        for dirpath, _, filenames in os.walk(folder):
+            for filename in filenames:
+                if filename.lower().endswith(".jsonl"):
+                    results.append(os.path.join(dirpath, filename))
+        return sorted(results)
+
+    def _format_item_label(self, name, state):
+        if state == "checked":
+            box = "[x]"
+        elif state == "partial":
+            box = "[-]"
+        else:
+            box = "[ ]"
+        return f"{box}  {name}"
+
+
+    def _update_item_label(self, item_id):
+        item = self.tree_items[item_id]
+        current_values = self.tree.item(item_id, "values")
+        current_status = current_values[0] if current_values else ""
+        self.tree.item(
+            item_id,
+            text=self._format_item_label(item["name"], item["state"]),
+            values=(current_status,),
+        )
+
+    def _set_item_state(self, item_id, state, cascade=False):
+        item = self.tree_items.get(item_id)
+        if not item:
+            return
+        item["state"] = state
+        self._update_item_label(item_id)
+        if cascade and item["is_dir"]:
+            for child_id in self.tree.get_children(item_id):
+                self._set_item_state(child_id, state, cascade=True)
+
+    def _update_parent_states(self, item_id):
+        parent_id = self.tree.parent(item_id)
+        while parent_id:
+            child_ids = self.tree.get_children(parent_id)
+            if not child_ids:
+                break
+            states = [self.tree_items[child_id]["state"] for child_id in child_ids]
+            if all(state == "checked" for state in states):
+                new_state = "checked"
+            elif all(state == "unchecked" for state in states):
+                new_state = "unchecked"
+            else:
+                new_state = "partial"
+            if self.tree_items[parent_id]["state"] != new_state:
+                self.tree_items[parent_id]["state"] = new_state
+                self._update_item_label(parent_id)
+            parent_id = self.tree.parent(parent_id)
+
     def load_files(self, folder):
         """Populate the tree with JSONL files found in the selected folder."""
         for item in self.tree.get_children():
             self.tree.delete(item)
-        self.file_items = []
-        if not os.path.exists(folder): return
+        self.tree_items = {}
+        if not os.path.exists(folder):
+            return
 
-        for f in os.listdir(folder):
-            if f.lower().endswith(".jsonl"):
-                full_path = os.path.join(folder, f)
-                item_id = self.tree.insert("", "end", values=(f"☑  {f}", "Waiting..."))
-                self.file_items.append({"checked": True, "name": f, "path": full_path, "id": item_id})
+        jsonl_files = self._find_jsonl_files(folder)
+        if not jsonl_files:
+            return
+
+        dir_items = {}
+        for file_path in jsonl_files:
+            rel_dir = os.path.relpath(os.path.dirname(file_path), folder)
+            parent_id = ""
+            if rel_dir != ".":
+                current_rel = ""
+                for part in rel_dir.split(os.sep):
+                    current_rel = part if not current_rel else os.path.join(current_rel, part)
+                    if current_rel not in dir_items:
+                        dir_id = self.tree.insert(
+                            parent_id,
+                            "end",
+                            text=self._format_item_label(part, "checked"),
+                            values=("",),
+                            open=True,
+                        )
+                        dir_items[current_rel] = dir_id
+                        self.tree_items[dir_id] = {
+                            "id": dir_id,
+                            "name": part,
+                            "path": os.path.join(folder, current_rel),
+                            "is_dir": True,
+                            "state": "checked",
+                        }
+                    parent_id = dir_items[current_rel]
+            file_name = os.path.basename(file_path)
+            file_id = self.tree.insert(
+                parent_id,
+                "end",
+                text=self._format_item_label(file_name, "checked"),
+                values=("Waiting...",),
+            )
+            self.tree_items[file_id] = {
+                "id": file_id,
+                "name": file_name,
+                "path": file_path,
+                "is_dir": False,
+                "state": "checked",
+            }
 
     def toggle_check(self, event=None):
         """Toggle selection state for the currently focused row."""
         selected_id = self.tree.focus()
-        if not selected_id: return
-        item_data = next((x for x in self.file_items if x["id"] == selected_id), None)
-        if item_data:
-            item_data["checked"] = not item_data["checked"]
-            icon = "☑" if item_data["checked"] else "☐"
-            name = item_data["name"]
-            current_status = self.tree.item(selected_id, "values")[1]
-            self.tree.item(selected_id, values=(f"{icon}  {name}", current_status))
+        if not selected_id:
+            return
+        item = self.tree_items.get(selected_id)
+        if not item:
+            return
+        new_state = "checked" if item["state"] != "checked" else "unchecked"
+        self._set_item_state(selected_id, new_state, cascade=True)
+        self._update_parent_states(selected_id)
 
     def toggle_all(self):
         """Select or deselect all items based on the header checkbox."""
-        state = self.chk_all_var.get()
-        icon = "☑" if state else "☐"
-        for item in self.file_items:
-            item["checked"] = state
-            current_status = self.tree.item(item["id"], "values")[1]
-            self.tree.item(item["id"], values=(f"{icon}  {item['name']}", current_status))
+        state = "checked" if self.chk_all_var.get() else "unchecked"
+        for item_id in self.tree.get_children(""):
+            self._set_item_state(item_id, state, cascade=True)
 
     def start_batch(self):
         """Start background conversion for the selected files."""
-        to_process = [x for x in self.file_items if x["checked"]]
+        to_process = [
+            item for item in self.tree_items.values()
+            if not item["is_dir"] and item["state"] == "checked"
+        ]
         if not to_process:
             messagebox.showwarning("No Files", "No files selected for conversion.")
             return
@@ -775,20 +889,21 @@ class BatchConverterGUI:
 
     def process_files(self, files):
         """Convert each file and update status in the UI."""
-        output_folder = self.output_folder_path.get().strip() or self.folder_path.get().strip()
+        input_root = self.folder_path.get().strip()
+        output_folder = self.output_folder_path.get().strip() or input_root
         for item in files:
             self.update_status(item["id"], "Converting...")
-            success, msg = convert_single_file(item["path"], output_folder)
-            final_status = "✅ Done" if success else "❌ Error"
+            success, msg = convert_single_file(item["path"], output_folder, input_root)
+            final_status = "Done" if success else "Error"
             self.update_status(item["id"], final_status)
         messagebox.showinfo("Batch Complete", f"Finished processing {len(files)} files.")
 
     def update_status(self, item_id, status_text):
         """Safely update the status column for a given tree row."""
         try:
-            current_vals = self.tree.item(item_id, "values")
-            self.tree.item(item_id, values=(current_vals[0], status_text))
+            self.tree.item(item_id, values=(status_text,))
         except: pass
+
 
 def create_gui():
     """Launch the Tkinter GUI application."""
