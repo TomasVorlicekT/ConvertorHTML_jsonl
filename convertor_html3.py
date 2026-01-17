@@ -6,7 +6,6 @@ batch conversion of JSONL log files into a readable HTML format.
 """
 
 import json
-import sys
 import os
 import html
 import re
@@ -1104,42 +1103,50 @@ class BatchConverterGUI:
         dir_items = {}
         for file_path in jsonl_files:
             rel_dir = os.path.relpath(os.path.dirname(file_path), folder)
-            parent_id = ""
-            if rel_dir != ".":
-                current_rel = ""
-                for part in rel_dir.split(os.sep):
-                    current_rel = part if not current_rel else os.path.join(current_rel, part)
-                    if current_rel not in dir_items:
-                        dir_id = self.tree.insert(
-                            parent_id,
-                            "end",
-                            text=self._format_item_label(part, "checked"),
-                            values=("",),
-                            open=True,
-                        )
-                        dir_items[current_rel] = dir_id
-                        self.tree_items[dir_id] = {
-                            "id": dir_id,
-                            "name": part,
-                            "path": os.path.join(folder, current_rel),
-                            "is_dir": True,
-                            "state": "checked",
-                        }
-                    parent_id = dir_items[current_rel]
-            file_name = os.path.basename(file_path)
-            file_id = self.tree.insert(
-                parent_id,
-                "end",
-                text=self._format_item_label(file_name, "checked"),
-                values=("Waiting...",),
-            )
-            self.tree_items[file_id] = {
-                "id": file_id,
-                "name": file_name,
-                "path": file_path,
-                "is_dir": False,
-                "state": "checked",
-            }
+            parent_id = self._ensure_dir_item(dir_items, folder, rel_dir)
+            self._add_file_item(parent_id, file_path)
+
+    def _ensure_dir_item(self, dir_items, folder, rel_dir):
+        if rel_dir == ".":
+            return ""
+        current_rel = ""
+        parent_id = ""
+        for part in rel_dir.split(os.sep):
+            current_rel = part if not current_rel else os.path.join(current_rel, part)
+            if current_rel not in dir_items:
+                dir_id = self.tree.insert(
+                    parent_id,
+                    "end",
+                    text=self._format_item_label(part, "checked"),
+                    values=("",),
+                    open=True,
+                )
+                dir_items[current_rel] = dir_id
+                self.tree_items[dir_id] = {
+                    "id": dir_id,
+                    "name": part,
+                    "path": os.path.join(folder, current_rel),
+                    "is_dir": True,
+                    "state": "checked",
+                }
+            parent_id = dir_items[current_rel]
+        return parent_id
+
+    def _add_file_item(self, parent_id, file_path):
+        file_name = os.path.basename(file_path)
+        file_id = self.tree.insert(
+            parent_id,
+            "end",
+            text=self._format_item_label(file_name, "checked"),
+            values=("Waiting...",),
+        )
+        self.tree_items[file_id] = {
+            "id": file_id,
+            "name": file_name,
+            "path": file_path,
+            "is_dir": False,
+            "state": "checked",
+        }
 
     def toggle_check(self, event=None):
         """Toggle selection state for the currently focused row."""
@@ -1185,7 +1192,8 @@ class BatchConverterGUI:
         """Safely update the status column for a given tree row."""
         try:
             self.tree.item(item_id, values=(status_text,))
-        except: pass
+        except:
+            pass
 
 
 def create_gui():
