@@ -1165,6 +1165,16 @@ class BatchConverterGUI:
                 self._update_item_label(parent_id)
             parent_id = self.tree.parent(parent_id)
 
+    def _sync_select_all_state(self):
+        file_states = [
+            item["state"]
+            for item in self.tree_items.values()
+            if not item["is_dir"]
+        ]
+        all_checked = bool(file_states) and all(state == "checked" for state in file_states)
+        if self.chk_all_var.get() != all_checked:
+            self.chk_all_var.set(all_checked)
+
     def load_files(self, folder):
         """Populate the tree with JSONL files found in the selected folder."""
         for item in self.tree.get_children():
@@ -1236,6 +1246,7 @@ class BatchConverterGUI:
         new_state = "checked" if item["state"] != "checked" else "unchecked"
         self._set_item_state(selected_id, new_state, cascade=True)
         self._update_parent_states(selected_id)
+        self._sync_select_all_state()
 
     def toggle_all(self):
         """Select or deselect all items based on the header checkbox."""
