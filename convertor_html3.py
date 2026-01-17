@@ -175,6 +175,8 @@ def get_html_header(date_str=""):
         .filter-group {{ display: flex; align-items: center; margin-bottom: 10px; cursor: pointer; }}
         .filter-group input {{ margin-right: 10px; transform: scale(1.2); cursor: pointer; }}
         .filter-group label {{ cursor: pointer; font-size: 0.95em; }}
+        .index-link {{ text-decoration: none; color: #333; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }}
+        .index-link:hover {{ color: #007bff; }}
         
         @media (max-width: 1500px) {{
             .sidebar {{ position: static; width: 100%; margin-bottom: 20px; box-shadow: none; border: 1px solid #ddd; }}
@@ -238,6 +240,8 @@ def get_html_header(date_str=""):
 <div class="sidebar" id="draggable-sidebar">
     <div class="sidebar-header" id="sidebar-handle"><h3>🔍 Filters</h3></div>
     <div class="sidebar-content">
+        <div class="filter-group"><a class="index-link" href="index.html">&#127968; Overview</a></div>
+        <hr style="border: 0; border-top: 1px solid #eee;">
         <div class="filter-group"><input type="checkbox" id="check-user-chat" checked><label for="check-user-chat">User (Chat Messages)</label></div>
         <div class="filter-group"><input type="checkbox" id="check-user-log"><label for="check-user-log">User (Stream Logs)</label></div>
         <div class="filter-group"><input type="checkbox" id="check-assistant" checked><label for="check-assistant">Assistant</label></div>
@@ -434,6 +438,149 @@ def _parse_json_line(line):
     except Exception:
         return None
 
+def _parse_iso_datetime(iso_str):
+    try:
+        if iso_str.endswith('Z'):
+            iso_str = iso_str[:-1]
+        if '.' in iso_str:
+            iso_str = iso_str.split('.')[0]
+        return datetime.fromisoformat(iso_str)
+    except Exception:
+        return None
+
+def _get_session_timestamp(lines):
+    for line in lines:
+        data = _parse_json_line(line)
+        if not data:
+            continue
+        if "timestamp" in data:
+            ts = _parse_iso_datetime(data["timestamp"])
+            if ts:
+                return ts
+        payload = data.get("payload", {})
+        if isinstance(payload, dict) and "timestamp" in payload:
+            ts = _parse_iso_datetime(payload["timestamp"])
+            if ts:
+                return ts
+    return None
+
+def _get_first_prompt(lines):
+    for line in lines:
+        data = _parse_json_line(line)
+        if not data:
+            continue
+        msg_type = data.get("type")
+        payload = data.get("payload", {})
+
+        if msg_type == "event_msg" and payload.get("type") == "user_message":
+            text = payload.get("message", "")
+            if text:
+                return text
+
+        if msg_type == "response_item" and payload.get("type") == "message":
+            role = payload.get("role", "").lower()
+            if role == "user":
+                text = extract_text_content(payload.get("content"))
+                if text:
+                    return text
+    return ""
+
+def _truncate_prompt(prompt, limit=300):
+    if not prompt:
+        return ""
+    return prompt[:limit]
+
+def _collect_index_entries(folder):
+    entries = []
+    for filename in sorted(os.listdir(folder)):
+        if not filename.lower().endswith(".jsonl"):
+            continue
+        input_path = os.path.join(folder, filename)
+        output_path = os.path.splitext(input_path)[0] + ".html"
+        if not os.path.exists(output_path):
+            continue
+        try:
+            with open(input_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        except Exception:
+            continue
+
+        date_display = get_session_date(lines)
+        timestamp = _get_session_timestamp(lines)
+        prompt = _truncate_prompt(_get_first_prompt(lines))
+        entries.append({
+            "date": date_display or "Unknown",
+            "prompt": prompt,
+            "href": os.path.basename(output_path),
+            "timestamp": timestamp,
+            "file": filename,
+        })
+
+    entries.sort(key=lambda e: e["file"])
+    entries.sort(key=lambda e: e["timestamp"] or datetime.min, reverse=True)
+    return entries
+
+def _build_index_html(entries):
+    if not entries:
+        body = "<p>No converted sessions found.</p>"
+    else:
+        rows = []
+        for entry in entries:
+            date_text = html.escape(entry["date"])
+            prompt_text = html.escape(entry["prompt"])
+            href = html.escape(entry["href"])
+            rows.append(
+                f"<tr><td><a href=\"{href}\">{date_text}</a></td><td class=\"prompt\">{prompt_text}</td></tr>"
+            )
+        body = (
+            "<table>"
+            "<thead><tr><th>Date</th><th>Initial prompt</th></tr></thead>"
+            "<tbody>"
+            + "".join(rows)
+            + "</tbody></table>"
+        )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codex Session Overview</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; margin: 0; padding: 0; background-color: #f4f6f8; color: #333; }}
+        .wrapper {{ padding: 40px 20px; }}
+        .container {{ width: 100%; max-width: 1100px; margin: 0 auto; }}
+        h1 {{ text-align: center; margin-bottom: 10px; }}
+        p {{ text-align: center; color: #666; }}
+        table {{ width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-radius: 10px; overflow: hidden; }}
+        th, td {{ text-align: left; padding: 14px 16px; border-bottom: 1px solid #eee; vertical-align: top; }}
+        th {{ background: #f0f2f5; font-weight: 700; }}
+        tr:nth-child(even) td {{ background: #fafbfc; }}
+        a {{ color: #007bff; text-decoration: none; font-weight: 600; }}
+        a:hover {{ text-decoration: underline; }}
+        td.prompt {{ white-space: pre-wrap; }}
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="container">
+            <h1>Codex Session Overview</h1>
+            <p>Click a date to open the full transcript.</p>
+            {body}
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+def write_index_html_for_folder(folder):
+    entries = _collect_index_entries(folder)
+    html_content = _build_index_html(entries)
+    output_path = os.path.join(folder, "index.html")
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    return output_path
+
 def convert_single_file(input_path):
     """Convert a single JSONL log file into an HTML transcript.
 
@@ -498,6 +645,7 @@ def convert_single_file(input_path):
             return False, "Empty/Invalid Log"
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write("".join(html_parts))
+        write_index_html_for_folder(os.path.dirname(output_path))
         return True, "Done"
     except Exception as e:
         return False, str(e)
