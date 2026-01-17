@@ -5,14 +5,54 @@ This module provides a core conversion engine and a Tkinter GUI that supports
 batch conversion of JSONL log files into a readable HTML format.
 """
 
+import html
 import json
 import os
-import html
 import re
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
 import threading
 from datetime import datetime
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+DATE_FORMAT = "%d.%m.%Y %H:%M:%S"
+TOOL_OUTPUT_TRUNCATE_LIMIT = 4000
+PROMPT_TRUNCATE_LIMIT = 300
+
+TEXT_BLOCK_TYPES = {"input_text", "output_text", "summary_text", "text"}
+
+CONTEXT_PLACEHOLDER = "__CONTEXT_PROTECTED__"
+CODE_BLOCK_PLACEHOLDER_PREFIX = "__CODE_BLOCK_"
+
+ICON_USER = "\N{BUST IN SILHOUETTE}"
+ICON_QUESTION = "\N{BLACK QUESTION MARK ORNAMENT}"
+ICON_USER_REQUEST = f"{ICON_USER}{ICON_QUESTION}"
+ICON_ASSISTANT = "\N{ROBOT FACE}"
+ICON_REASONING = "\N{BRAIN}"
+ICON_TOOL = "\N{HAMMER AND WRENCH}"
+ICON_GEAR = "\N{GEAR}"
+ICON_FILTERS = "\N{LEFT-POINTING MAGNIFYING GLASS}"
+
+CONTEXT_SECTION_PATTERN = re.compile(
+    r"(?ms)(^#+\s*Context from my IDE setup:)"
+    r"(.*?)(?=^#+\s*My request for Codex:|\Z)"
+)
+REQUEST_SECTION_PATTERN = re.compile(
+    r"(?ms)^#+\s*My request for Codex:?\s*(.*?)(?=^#+\s|\Z)"
+)
+CODE_BLOCK_PATTERN = re.compile(r"```(\w+)?\n?(.*?)```", re.DOTALL)
+NEWLINES_BEFORE_HEADER_PATTERN = re.compile(r"\n{2,}(?=#)")
+NEWLINES_PATTERN = re.compile(r"\n{3,}")
+MY_REQUEST_HEADER_PATTERN = re.compile(r"(?m)^#+\s+My request for Codex:?")
+HEADER_PATTERNS = [
+    (re.compile(r"(?m)^# (.*?)$"), r"<h2>\1</h2>"),
+    (re.compile(r"(?m)^## (.*?)$"), r"<h3>\1</h3>"),
+    (re.compile(r"(?m)^### (.*?)$"), r"<h4>\1</h4>"),
+]
+STRONG_PATTERN = re.compile(r"\*\*(.*?)\*\*")
+INLINE_CODE_PATTERN = re.compile(r"`([^`]+)`")
+REL_PATH_SPLIT_PATTERN = re.compile(r"[\\\\/]+")
+
+MY_REQUEST_HEADER_REPLACEMENT = f"<h2>{ICON_USER_REQUEST} My request for Codex:</h2>"
 
 # ==========================================
 # PART 1: THE CORE CONVERTER ENGINE (Logic)
@@ -27,16 +67,33 @@ def extract_text_content(content_data):
     Returns:
         Concatenated text for supported block types, or an empty string.
     """
-    text_parts = []
-    if isinstance(content_data, list):
-        for item in content_data:
-            if isinstance(item, dict):
-                msg_type = item.get("type")
-                if msg_type in ["input_text", "output_text", "summary_text", "text"]:
-                    text_parts.append(item.get("text", ""))
-    elif isinstance(content_data, str):
+    if isinstance(content_data, str):
         return content_data
+    if not isinstance(content_data, list):
+        return ""
+
+    text_parts = []
+    for item in content_data:
+        if isinstance(item, dict) and item.get("type") in TEXT_BLOCK_TYPES:
+            text_parts.append(item.get("text", ""))
     return "".join(text_parts)
+
+def _normalize_iso_timestamp(iso_str):
+    if not isinstance(iso_str, str):
+        return ""
+    normalized = iso_str.rstrip("Z")
+    if "." in normalized:
+        normalized = normalized.split(".", 1)[0]
+    return normalized
+
+def _parse_iso_datetime(iso_str):
+    normalized = _normalize_iso_timestamp(iso_str)
+    if not normalized:
+        return None
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
 
 def format_timestamp(iso_str):
     """Convert an ISO 8601 timestamp to DD.MM.YYYY HH:MM:SS.
@@ -48,15 +105,47 @@ def format_timestamp(iso_str):
     Returns:
         Formatted timestamp, or the original string on parse errors.
     """
-    try:
-        if iso_str.endswith('Z'):
-            iso_str = iso_str[:-1]
-        if '.' in iso_str:
-            iso_str = iso_str.split('.')[0]
-        dt = datetime.fromisoformat(iso_str)
-        return dt.strftime("%d.%m.%Y %H:%M:%S")
-    except Exception:
+    if not isinstance(iso_str, str):
         return iso_str
+    dt = _parse_iso_datetime(iso_str)
+    return dt.strftime(DATE_FORMAT) if dt else iso_str
+
+def _extract_context_block(text):
+    match = CONTEXT_SECTION_PATTERN.search(text)
+    if not match:
+        return text, None
+    context_content = match.group(2)
+    replaced_text = text[:match.start()] + CONTEXT_PLACEHOLDER + "\n" + text[match.end():]
+    return replaced_text, context_content
+
+def _extract_code_blocks(text):
+    code_blocks = {}
+
+    def store_code_block(match):
+        key = f"{CODE_BLOCK_PLACEHOLDER_PREFIX}{len(code_blocks)}__"
+        lang = match.group(1) or "text"
+        content = match.group(2)
+        code_blocks[key] = f'<pre><code class="language-{lang}">{content}</code></pre>'
+        return key
+
+    return CODE_BLOCK_PATTERN.sub(store_code_block, text), code_blocks
+
+def _apply_markdown_formatting(text):
+    text = NEWLINES_BEFORE_HEADER_PATTERN.sub("\n", text)
+    text = NEWLINES_PATTERN.sub("\n\n", text)
+    text = MY_REQUEST_HEADER_PATTERN.sub(MY_REQUEST_HEADER_REPLACEMENT, text)
+    for pattern, replacement in HEADER_PATTERNS:
+        text = pattern.sub(replacement, text)
+    text = STRONG_PATTERN.sub(r"<strong>\1</strong>", text)
+    text = INLINE_CODE_PATTERN.sub(r'<code class="inline-code">\1</code>', text)
+    return text
+
+def _wrap_context_block(context_content):
+    return (
+        "<details><summary>Context from my IDE setup</summary>\n"
+        f"<div class=\"context-content\">{context_content}</div>\n"
+        "</details>\n"
+    )
 
 def format_content(text):
     """Render message content as safe, styled HTML.
@@ -71,62 +160,24 @@ def format_content(text):
     Returns:
         HTML string safe for embedding inside the transcript.
     """
-    if not text: return ""
-    safe_text = html.escape(text)
+    if not text:
+        return ""
 
-    # --- STEP 1: PROTECT CONTEXT SECTION ---
-    # The context block is shown inside a <details> section without extra
-    # formatting to preserve its original layout.
-    context_placeholder = "__CONTEXT_PROTECTED__"
-    context_content = ""
-    has_context = False
-    
-    # Regex to capture Context section until "My request" or end of string
-    context_pattern = r'(?ms)(^#+\s*Context from my IDE setup:)(.*?)(?=^#+\s*My request for Codex:|\Z)'
-    
-    match = re.search(context_pattern, safe_text)
-    if match:
-        has_context = True
-        context_content = match.group(2)
-        # Append newline to placeholder to ensure next header anchor (^) works
-        safe_text = safe_text.replace(match.group(0), context_placeholder + "\n")
+    escaped_text = html.escape(text)
+    escaped_text, context_content = _extract_context_block(escaped_text)
+    escaped_text, code_blocks = _extract_code_blocks(escaped_text)
+    escaped_text = _apply_markdown_formatting(escaped_text)
 
-    # --- STEP 2: PROCESS CODE BLOCKS ---
-    code_blocks = {}
-    def store_code_block(match):
-        """Replace code blocks with placeholders and store HTML versions."""
-        key = f"__CODE_BLOCK_{len(code_blocks)}__"
-        lang = match.group(1) if match.group(1) else "text"
-        content = match.group(2)
-        code_html = f'<pre><code class="language-{lang}">{content}</code></pre>'
-        code_blocks[key] = code_html
-        return key
-
-    safe_text = re.sub(r'```(\w+)?\n?(.*?)```', store_code_block, safe_text, flags=re.DOTALL)
-
-    # --- STEP 3: FORMATTING ---
-    # Compact mode newlines
-    safe_text = re.sub(r'\n{2,}(?=#)', '\n', safe_text)
-    safe_text = re.sub(r'\n{3,}', '\n\n', safe_text)
-    
-    # Headers & Styles
-    safe_text = re.sub(r'(?m)^#+\s+My request for Codex:?', r'<h2>👤❓ My request for Codex:</h2>', safe_text)
-    safe_text = re.sub(r'(?m)^# (.*?)$', r'<h2>\1</h2>', safe_text)
-    safe_text = re.sub(r'(?m)^## (.*?)$', r'<h3>\1</h3>', safe_text)
-    safe_text = re.sub(r'(?m)^### (.*?)$', r'<h4>\1</h4>', safe_text)
-    safe_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', safe_text)
-    safe_text = re.sub(r'`([^`]+)`', r'<code class="inline-code">\1</code>', safe_text)
-
-    # --- STEP 4: RESTORE CODE BLOCKS ---
     for key, code_html in code_blocks.items():
-        safe_text = safe_text.replace(key, code_html)
+        escaped_text = escaped_text.replace(key, code_html)
 
-    # --- STEP 5: RESTORE CONTEXT ---
-    if has_context:
-        details_html = f'<details><summary>Context from my IDE setup</summary>\n<div class="context-content">{context_content}</div>\n</details>\n'
-        safe_text = safe_text.replace(context_placeholder, details_html)
+    if context_content is not None:
+        escaped_text = escaped_text.replace(
+            CONTEXT_PLACEHOLDER,
+            _wrap_context_block(context_content),
+        )
 
-    return safe_text
+    return escaped_text
 
 def get_html_header(date_str="", index_href="codex_sessions_overview.html"):
     """Build the HTML document header and top-of-page layout.
@@ -321,7 +372,7 @@ def get_html_header(date_str="", index_href="codex_sessions_overview.html"):
 <body>
 
 <div class="sidebar" id="draggable-sidebar">
-    <div class="sidebar-header" id="sidebar-handle"><h3>🔍 Filters</h3></div>
+    <div class="sidebar-header" id="sidebar-handle"><h3>{ICON_FILTERS} Filters</h3></div>
     <div class="sidebar-content">
         <div class="filter-group"><input type="checkbox" id="check-user-chat" checked><label for="check-user-chat">User (Chat Messages)</label></div>
         <div class="filter-group"><input type="checkbox" id="check-user-log"><label for="check-user-log">User (Stream Logs)</label></div>
@@ -393,11 +444,14 @@ def get_session_date(lines):
         Formatted timestamp string or an empty string if none is found.
     """
     for line in lines:
-        try:
-            data = json.loads(line)
-            if "timestamp" in data: return format_timestamp(data["timestamp"])
-            if "payload" in data and "timestamp" in data["payload"]: return format_timestamp(data["payload"]["timestamp"])
-        except: continue
+        data = _parse_json_line(line)
+        if not data:
+            continue
+        if "timestamp" in data:
+            return format_timestamp(data["timestamp"])
+        payload = data.get("payload", {})
+        if isinstance(payload, dict) and "timestamp" in payload:
+            return format_timestamp(payload["timestamp"])
     return ""
 
 def _should_emit_text(text, seen_set):
@@ -420,7 +474,7 @@ def _build_message_html(role, css_class, icon, text):
 def _build_reasoning_html(text):
     return (
         '<div class="message type-reasoning">'
-        '<span class="reasoning-title">🧠 Reasoning</span>'
+        f'<span class="reasoning-title">{ICON_REASONING} Reasoning</span>'
         f'<div class="reasoning-content">{format_content(text)}</div>'
         '</div>'
     )
@@ -436,7 +490,7 @@ def _build_tool_call_html(tool, args, lang="json"):
     pretty = _format_tool_args(args)
     return (
         '<div class="message type-tool-call">'
-        f'<div class="tool-header">🛠️ Tool Call: {html.escape(tool)}</div>'
+        f'<div class="tool-header">{ICON_TOOL} Tool Call: {html.escape(tool)}</div>'
         f'<pre><code class="language-{lang}">{html.escape(pretty)}</code></pre>'
         '</div>'
     )
@@ -444,19 +498,19 @@ def _build_tool_call_html(tool, args, lang="json"):
 def _build_custom_tool_call_html(tool, inp):
     return (
         '<div class="message type-tool-call">'
-        f'<div class="tool-header">🛠️ Tool Call: {html.escape(tool)}</div>'
+        f'<div class="tool-header">{ICON_TOOL} Tool Call: {html.escape(tool)}</div>'
         f'<pre><code class="language-diff">{html.escape(inp)}</code></pre>'
         '</div>'
     )
 
 def _build_tool_output_html(output):
     truncated_note = ""
-    if output and len(output) > 4000:
-        output = output[:4000]
+    if output and len(output) > TOOL_OUTPUT_TRUNCATE_LIMIT:
+        output = output[:TOOL_OUTPUT_TRUNCATE_LIMIT]
         truncated_note = '<div class="truncated">... (truncated)</div>'
     return (
         '<div class="message type-tool-output">'
-        '<div class="tool-header">🛠️ Tool Call Output</div>'
+        f'<div class="tool-header">{ICON_TOOL} Tool Call Output</div>'
         f'<pre><code class="language-text">{html.escape(output)}</code></pre>'
         f'{truncated_note}'
         '</div>'
@@ -472,10 +526,10 @@ def _build_event_message(payload, seen_hashes_events, seen_hashes_other):
     if event_type == "user_message":
         if not _should_emit_text(text, seen_hashes_events):
             return ""
-        return _build_message_html("User", "role-user-chat", "👤", text)
+        return _build_message_html("User", "role-user-chat", ICON_USER, text)
     if not _should_emit_text(text, seen_hashes_other):
         return ""
-    return _build_message_html("Assistant", "role-assistant", "🤖", text)
+    return _build_message_html("Assistant", "role-assistant", ICON_ASSISTANT, text)
 
 def _build_response_message(payload, seen_hashes_stream, seen_hashes_other):
     role = payload.get("role", "unknown").capitalize()
@@ -486,14 +540,14 @@ def _build_response_message(payload, seen_hashes_stream, seen_hashes_other):
     if role_l == "user":
         if not _should_emit_text(text, seen_hashes_stream):
             return ""
-        return _build_message_html(role, "role-user-log", "👤", text)
+        return _build_message_html(role, "role-user-log", ICON_USER, text)
     if role_l in ["assistant", "model"]:
         if not _should_emit_text(text, seen_hashes_other):
             return ""
-        return _build_message_html(role, "role-assistant", "🤖", text)
+        return _build_message_html(role, "role-assistant", ICON_ASSISTANT, text)
     if not _should_emit_text(text, seen_hashes_other):
         return ""
-    return _build_message_html(role, "role-developer", "⚙️", text)
+    return _build_message_html(role, "role-developer", ICON_GEAR, text)
 
 def _build_response_item(payload, seen_hashes_stream, seen_hashes_other):
     item_type = payload.get("type")
@@ -529,16 +583,6 @@ def _path_to_href(path):
         href = href.replace(os.altsep, "/")
     return href
 
-def _parse_iso_datetime(iso_str):
-    try:
-        if iso_str.endswith('Z'):
-            iso_str = iso_str[:-1]
-        if '.' in iso_str:
-            iso_str = iso_str.split('.')[0]
-        return datetime.fromisoformat(iso_str)
-    except Exception:
-        return None
-
 def _get_session_timestamp(lines):
     for line in lines:
         data = _parse_json_line(line)
@@ -572,15 +616,12 @@ def _get_first_prompt(lines):
 def _extract_user_request_from_context(text):
     if "Context from my IDE setup" not in text:
         return text
-    match = re.search(
-        r'(?ms)^#+\s*My request for Codex:?\s*(.*?)(?=^#+\s|\Z)',
-        text,
-    )
+    match = REQUEST_SECTION_PATTERN.search(text)
     if not match:
         return text
     return match.group(1).strip()
 
-def _truncate_prompt(prompt, limit=300):
+def _truncate_prompt(prompt, limit=PROMPT_TRUNCATE_LIMIT):
     if not prompt:
         return ""
     return prompt[:limit]
@@ -621,7 +662,7 @@ def _collect_index_entries(input_folder, output_folder):
     return entries
 
 def _split_rel_path(rel_path):
-    parts = re.split(r"[\\\\/]+", rel_path)
+    parts = REL_PATH_SPLIT_PATTERN.split(rel_path)
     return [part for part in parts if part]
 
 def _build_index_tree(entries):
@@ -1030,8 +1071,6 @@ class BatchConverterGUI:
         if folder:
             self.output_folder_custom = True
 
-
-
     def _find_jsonl_files(self, folder):
         results = []
         for dirpath, _, filenames in os.walk(folder):
@@ -1192,7 +1231,7 @@ class BatchConverterGUI:
         """Safely update the status column for a given tree row."""
         try:
             self.tree.item(item_id, values=(status_text,))
-        except:
+        except tk.TclError:
             pass
 
 
