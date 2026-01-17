@@ -23,14 +23,14 @@ TEXT_BLOCK_TYPES = {"input_text", "output_text", "summary_text", "text"}
 CONTEXT_PLACEHOLDER = "__CONTEXT_PROTECTED__"
 CODE_BLOCK_PLACEHOLDER_PREFIX = "__CODE_BLOCK_"
 
-ICON_USER = "\N{BUST IN SILHOUETTE}"
-ICON_QUESTION = "\N{BLACK QUESTION MARK ORNAMENT}"
-ICON_USER_REQUEST = f"{ICON_USER}{ICON_QUESTION}"
-ICON_ASSISTANT = "\N{ROBOT FACE}"
-ICON_REASONING = "\N{BRAIN}"
-ICON_TOOL = "\N{HAMMER AND WRENCH}"
-ICON_GEAR = "\N{GEAR}"
-ICON_FILTERS = "\N{LEFT-POINTING MAGNIFYING GLASS}"
+ICON_USER           = "\N{BUST IN SILHOUETTE}"
+ICON_QUESTION       = "\N{BLACK QUESTION MARK ORNAMENT}"
+ICON_USER_REQUEST   = f"{ICON_USER}{ICON_QUESTION}"
+ICON_ASSISTANT      = "\N{ROBOT FACE}"
+ICON_REASONING      = "\N{BRAIN}"
+ICON_TOOL           = "\N{HAMMER AND WRENCH}"
+ICON_GEAR           = "\N{GEAR}"
+ICON_FILTERS        = "\N{LEFT-POINTING MAGNIFYING GLASS}"
 
 CONTEXT_SECTION_PATTERN = re.compile(
     r"(?ms)(^#+\s*Context from my IDE setup:)"
@@ -1016,8 +1016,9 @@ def convert_single_file(input_path, output_folder=None, input_root=None):
     except Exception as e:
         return False, str(e)
 
+
 # ==========================================
-# PART 2: THE GUI
+# PART 2: THE GUI (Thread-Safe Version)
 # ==========================================
 
 
@@ -1257,15 +1258,27 @@ class BatchConverterGUI:
         """Convert each file and update status in the UI."""
         input_root = self.folder_path.get().strip()
         output_folder = self.output_folder_path.get().strip() or input_root
+
         for item in files:
+            # Safe call to update status
             self.update_status(item["id"], "Converting...")
+
+            # Logic remains same, runs in thread
             success, msg = convert_single_file(item["path"], output_folder, input_root)
             final_status = "Done" if success else "Error"
+
+            # Safe call to update status
             self.update_status(item["id"], final_status)
-        messagebox.showinfo("Batch Complete", f"Finished processing {len(files)} files.")
+
+        # Safe call to show final messagebox on main thread
+        self.root.after(0, lambda: messagebox.showinfo("Batch Complete", f"Finished processing {len(files)} files."))
 
     def update_status(self, item_id, status_text):
-        """Safely update the status column for a given tree row."""
+        """Safely update the status column for a given tree row using the main thread."""
+        self.root.after(0, lambda: self._internal_update_status(item_id, status_text))
+
+    def _internal_update_status(self, item_id, status_text):
+        """Internal method called by the main thread to modify the widget."""
         try:
             self.tree.item(item_id, values=(status_text,))
         except tk.TclError:
