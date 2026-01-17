@@ -313,6 +313,127 @@ def get_session_date(lines):
         except: continue
     return ""
 
+def _should_emit_text(text, seen_set):
+    if not text:
+        return False
+    text_hash = hash(text)
+    if text_hash in seen_set:
+        return False
+    seen_set.add(text_hash)
+    return True
+
+def _build_message_html(role, css_class, icon, text):
+    return (
+        f'<div class="message {css_class}">'
+        f'<div class="role">{icon} {role}</div>'
+        f'<div class="content">{format_content(text)}</div>'
+        f'</div>'
+    )
+
+def _build_reasoning_html(text):
+    return (
+        '<div class="message type-reasoning">'
+        '<span class="reasoning-title">🧠 Reasoning</span>'
+        f'<div class="reasoning-content">{format_content(text)}</div>'
+        '</div>'
+    )
+
+def _format_tool_args(args):
+    try:
+        parsed = json.loads(args) if isinstance(args, str) else args
+        return json.dumps(parsed, indent=2)
+    except Exception:
+        return str(args)
+
+def _build_tool_call_html(tool, args, lang="json"):
+    pretty = _format_tool_args(args)
+    return (
+        '<div class="message type-tool-call">'
+        f'<div class="tool-header">🛠️ Tool Call: {html.escape(tool)}</div>'
+        f'<pre><code class="language-{lang}">{html.escape(pretty)}</code></pre>'
+        '</div>'
+    )
+
+def _build_custom_tool_call_html(tool, inp):
+    return (
+        '<div class="message type-tool-call">'
+        f'<div class="tool-header">🛠️ Tool Call: {html.escape(tool)}</div>'
+        f'<pre><code class="language-diff">{html.escape(inp)}</code></pre>'
+        '</div>'
+    )
+
+def _build_tool_output_html(output):
+    truncated_note = ""
+    if output and len(output) > 4000:
+        output = output[:4000]
+        truncated_note = '<div class="truncated">... (truncated)</div>'
+    return (
+        '<div class="message type-tool-output">'
+        '<div class="tool-header">🛠️ Tool Call Output</div>'
+        f'<pre><code class="language-text">{html.escape(output)}</code></pre>'
+        f'{truncated_note}'
+        '</div>'
+    )
+
+def _build_event_message(payload, seen_hashes_events, seen_hashes_other):
+    event_type = payload.get("type")
+    if event_type not in ["agent_message", "user_message"]:
+        return ""
+    text = payload.get("message", "")
+    if not text:
+        return ""
+    if event_type == "user_message":
+        if not _should_emit_text(text, seen_hashes_events):
+            return ""
+        return _build_message_html("User", "role-user-chat", "👤", text)
+    if not _should_emit_text(text, seen_hashes_other):
+        return ""
+    return _build_message_html("Assistant", "role-assistant", "🤖", text)
+
+def _build_response_message(payload, seen_hashes_stream, seen_hashes_other):
+    role = payload.get("role", "unknown").capitalize()
+    text = extract_text_content(payload.get("content"))
+    if not text:
+        return ""
+    role_l = role.lower()
+    if role_l == "user":
+        if not _should_emit_text(text, seen_hashes_stream):
+            return ""
+        return _build_message_html(role, "role-user-log", "👤", text)
+    if role_l in ["assistant", "model"]:
+        if not _should_emit_text(text, seen_hashes_other):
+            return ""
+        return _build_message_html(role, "role-assistant", "🤖", text)
+    if not _should_emit_text(text, seen_hashes_other):
+        return ""
+    return _build_message_html(role, "role-developer", "⚙", text)
+
+def _build_response_item(payload, seen_hashes_stream, seen_hashes_other):
+    item_type = payload.get("type")
+    if item_type == "message":
+        return _build_response_message(payload, seen_hashes_stream, seen_hashes_other)
+    if item_type == "reasoning":
+        text = extract_text_content(payload.get("summary", []))
+        return _build_reasoning_html(text) if text else ""
+    if item_type == "function_call":
+        tool = payload.get("name", "unknown")
+        args = payload.get("arguments", "{}")
+        return _build_tool_call_html(tool, args, lang="json")
+    if item_type == "custom_tool_call":
+        tool = payload.get("name", "unknown")
+        inp = payload.get("input", "")
+        return _build_custom_tool_call_html(tool, inp)
+    if item_type == "function_call_output":
+        out = payload.get("output", "")
+        return _build_tool_output_html(out)
+    return ""
+
+def _parse_json_line(line):
+    try:
+        return json.loads(line)
+    except Exception:
+        return None
+
 def convert_single_file(input_path):
     """Convert a single JSONL log file into an HTML transcript.
 
@@ -341,92 +462,40 @@ def convert_single_file(input_path):
 
         for line in lines:
             line = line.strip()
-            if not line: continue
+            if not line:
+                continue
             try:
-                data = json.loads(line)
+                data = _parse_json_line(line)
+                if data is None:
+                    continue
                 msg_type = data.get("type")
                 payload = data.get("payload", {})
-                
-                html_block = ""
-                
-                # --- EVENTS ---
+
                 if msg_type == "event_msg":
-                    event_type = payload.get("type")
-                    if event_type in ["agent_message", "user_message"]:
-                        text = payload.get("message", "")
-                        if text:
-                            # User Events -> Chat
-                            if event_type == "user_message":
-                                if hash(text) in seen_hashes_events: continue
-                                seen_hashes_events.add(hash(text))
-                                role, css_class, icon = "User", "role-user-chat", "👤"
-                            # Assistant Events
-                            else:
-                                if hash(text) in seen_hashes_other: continue
-                                seen_hashes_other.add(hash(text))
-                                role, css_class, icon = "Assistant", "role-assistant", "🤖"
-                                
-                            html_block = f'<div class="message {css_class}"><div class="role">{icon} {role}</div><div class="content">{format_content(text)}</div></div>'
-
-                # --- RESPONSE ITEMS ---
+                    html_block = _build_event_message(
+                        payload,
+                        seen_hashes_events,
+                        seen_hashes_other,
+                    )
                 elif msg_type == "response_item":
-                    item_type = payload.get("type")
-                    
-                    if item_type == "message":
-                        role = payload.get("role", "unknown").capitalize()
-                        text = extract_text_content(payload.get("content"))
-                        if text:
-                            role_l = role.lower()
-                            # User -> Stream Log
-                            if role_l == "user":
-                                if hash(text) in seen_hashes_stream: continue
-                                seen_hashes_stream.add(hash(text))
-                                css, ic = "role-user-log", "👤"
-                            # Assistant -> Shared Hash
-                            elif role_l in ["assistant","model"]:
-                                if hash(text) in seen_hashes_other: continue
-                                seen_hashes_other.add(hash(text))
-                                css, ic = "role-assistant", "🤖"
-                            else:
-                                if hash(text) in seen_hashes_other: continue
-                                seen_hashes_other.add(hash(text))
-                                css, ic = "role-developer", "⚙️"
-                                
-                            html_block = f'<div class="message {css}"><div class="role">{ic} {role}</div><div class="content">{format_content(text)}</div></div>'
-                    
-                    elif item_type == "reasoning":
-                        text = extract_text_content(payload.get("summary", []))
-                        if text:
-                            html_block = f'<div class="message type-reasoning"><span class="reasoning-title">🧠 Reasoning</span><div class="reasoning-content">{format_content(text)}</div></div>'
-
-                    elif item_type == "function_call":
-                        tool = payload.get("name", "unknown")
-                        args = payload.get("arguments", "{}")
-                        try: pretty = json.dumps(json.loads(args) if isinstance(args, str) else args, indent=2)
-                        except: pretty = str(args)
-                        html_block = f'<div class="message type-tool-call"><div class="tool-header">🛠️ Tool Call: {html.escape(tool)}</div><pre><code class="language-json">{html.escape(pretty)}</code></pre></div>'
-
-                    elif item_type == "custom_tool_call":
-                        tool = payload.get("name", "unknown")
-                        inp = payload.get("input", "")
-                        html_block = f'<div class="message type-tool-call"><div class="tool-header">🛠️ Tool Call: {html.escape(tool)}</div><pre><code class="language-diff">{html.escape(inp)}</code></pre></div>'
-
-                    elif item_type == "function_call_output":
-                        out = payload.get("output", "")
-                        trun = ""
-                        if out and len(out) > 2000:
-                            out = out[:2000]
-                            trun = '<div class="truncated">... (truncated)</div>'
-                        html_block = f'<div class="message type-tool-output"><div class="tool-header">Output</div><pre><code class="language-text">{html.escape(out)}</code></pre>{trun}</div>'
+                    html_block = _build_response_item(
+                        payload,
+                        seen_hashes_stream,
+                        seen_hashes_other,
+                    )
+                else:
+                    html_block = ""
 
                 if html_block:
                     html_parts.append(html_block)
                     count += 1
-            except: continue
+            except Exception:
+                continue
 
         html_parts.append(get_html_footer())
         
-        if count == 0: return False, "Empty/Invalid Log"
+        if count == 0:
+            return False, "Empty/Invalid Log"
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write("".join(html_parts))
         return True, "Done"
