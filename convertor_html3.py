@@ -129,11 +129,12 @@ def format_content(text):
 
     return safe_text
 
-def get_html_header(date_str=""):
+def get_html_header(date_str="", index_href="index.html"):
     """Build the HTML document header and top-of-page layout.
 
     Args:
         date_str: Optional session date string shown under the title.
+        index_href: Relative link to the overview index.
 
     Returns:
         The HTML header portion including CSS and the filter sidebar.
@@ -240,7 +241,7 @@ def get_html_header(date_str=""):
 <div class="sidebar" id="draggable-sidebar">
     <div class="sidebar-header" id="sidebar-handle"><h3>🔍 Filters</h3></div>
     <div class="sidebar-content">
-        <div class="filter-group"><a class="index-link" href="index.html">&#127968; Overview</a></div>
+        <div class="filter-group"><a class="index-link" href="{index_href}">&#127968; Overview</a></div>
         <hr style="border: 0; border-top: 1px solid #eee;">
         <div class="filter-group"><input type="checkbox" id="check-user-chat" checked><label for="check-user-chat">User (Chat Messages)</label></div>
         <div class="filter-group"><input type="checkbox" id="check-user-log"><label for="check-user-log">User (Stream Logs)</label></div>
@@ -494,13 +495,14 @@ def _truncate_prompt(prompt, limit=300):
         return ""
     return prompt[:limit]
 
-def _collect_index_entries(folder):
+def _collect_index_entries(input_folder, output_folder):
     entries = []
-    for filename in sorted(os.listdir(folder)):
+    for filename in sorted(os.listdir(input_folder)):
         if not filename.lower().endswith(".jsonl"):
             continue
-        input_path = os.path.join(folder, filename)
-        output_path = os.path.splitext(input_path)[0] + ".html"
+        input_path = os.path.join(input_folder, filename)
+        output_filename = os.path.splitext(filename)[0] + ".html"
+        output_path = os.path.join(output_folder, "converted_sessions", output_filename)
         if not os.path.exists(output_path):
             continue
         try:
@@ -515,7 +517,7 @@ def _collect_index_entries(folder):
         entries.append({
             "date": date_display or "Unknown",
             "prompt": prompt,
-            "href": os.path.basename(output_path),
+            "href": f"converted_sessions/{output_filename}",
             "timestamp": timestamp,
             "file": filename,
         })
@@ -577,32 +579,39 @@ def _build_index_html(entries):
 </html>
 """
 
-def write_index_html_for_folder(folder):
-    entries = _collect_index_entries(folder)
+def write_index_html_for_folder(input_folder, output_folder):
+    os.makedirs(output_folder, exist_ok=True)
+    entries = _collect_index_entries(input_folder, output_folder)
     html_content = _build_index_html(entries)
-    output_path = os.path.join(folder, "index.html")
+    output_path = os.path.join(output_folder, "index.html")
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html_content)
     return output_path
 
-def convert_single_file(input_path):
+def convert_single_file(input_path, output_folder=None):
     """Convert a single JSONL log file into an HTML transcript.
 
     Args:
         input_path: Path to the JSONL input file.
+        output_folder: Destination folder for output files. Defaults to the
+            input file's folder.
 
     Returns:
         Tuple (success, message). On success, the output HTML is written
-        alongside the input file using the same base name.
+        under the output folder in the converted_sessions subfolder.
     """
-    output_path = os.path.splitext(input_path)[0] + ".html"
+    output_folder = output_folder or os.path.dirname(input_path)
+    output_dir = os.path.join(output_folder, "converted_sessions")
+    output_filename = os.path.splitext(os.path.basename(input_path))[0] + ".html"
+    output_path = os.path.join(output_dir, output_filename)
     
     try:
+        os.makedirs(output_dir, exist_ok=True)
         with open(input_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         
         session_date = get_session_date(lines)
-        html_parts = [get_html_header(session_date)]
+        html_parts = [get_html_header(session_date, index_href="../index.html")]
         
         # Separate hash sets keep duplicates from different streams independent.
         seen_hashes_events = set()
@@ -649,7 +658,7 @@ def convert_single_file(input_path):
             return False, "Empty/Invalid Log"
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write("".join(html_parts))
-        write_index_html_for_folder(os.path.dirname(output_path))
+        write_index_html_for_folder(os.path.dirname(input_path), output_folder)
         return True, "Done"
     except Exception as e:
         return False, str(e)
@@ -667,13 +676,21 @@ class BatchConverterGUI:
         self.root.geometry("700x500")
         
         self.folder_path = tk.StringVar()
+        self.output_folder_path = tk.StringVar()
+        self.output_folder_custom = False
         self.file_items = []
 
         top_frame = ttk.Frame(root, padding="10")
         top_frame.pack(fill=tk.X)
-        ttk.Label(top_frame, text="Log Folder:").pack(side=tk.LEFT)
+        ttk.Label(top_frame, text="Log Folder:", width=15, anchor="w").pack(side=tk.LEFT)
         ttk.Entry(top_frame, textvariable=self.folder_path, width=50).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         ttk.Button(top_frame, text="Browse...", command=self.browse_folder).pack(side=tk.LEFT)
+
+        output_frame = ttk.Frame(root, padding="10")
+        output_frame.pack(fill=tk.X)
+        ttk.Label(output_frame, text="Output Folder:", width=15, anchor="w").pack(side=tk.LEFT)
+        ttk.Entry(output_frame, textvariable=self.output_folder_path, width=50).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        ttk.Button(output_frame, text="Browse...", command=self.browse_output_folder).pack(side=tk.LEFT)
 
         list_frame = ttk.Frame(root, padding="10")
         list_frame.pack(fill=tk.BOTH, expand=True)
@@ -703,7 +720,16 @@ class BatchConverterGUI:
         folder = filedialog.askdirectory()
         if folder:
             self.folder_path.set(folder)
+            if not self.output_folder_custom:
+                self.output_folder_path.set(folder)
             self.load_files(folder)
+
+    def browse_output_folder(self):
+        """Prompt for an output folder."""
+        folder = filedialog.askdirectory()
+        if folder:
+            self.output_folder_path.set(folder)
+            self.output_folder_custom = True
 
     def load_files(self, folder):
         """Populate the tree with JSONL files found in the selected folder."""
@@ -749,9 +775,10 @@ class BatchConverterGUI:
 
     def process_files(self, files):
         """Convert each file and update status in the UI."""
+        output_folder = self.output_folder_path.get().strip() or self.folder_path.get().strip()
         for item in files:
             self.update_status(item["id"], "Converting...")
-            success, msg = convert_single_file(item["path"])
+            success, msg = convert_single_file(item["path"], output_folder)
             final_status = "✅ Done" if success else "❌ Error"
             self.update_status(item["id"], final_status)
         messagebox.showinfo("Batch Complete", f"Finished processing {len(files)} files.")
