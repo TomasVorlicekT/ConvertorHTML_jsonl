@@ -1,3 +1,10 @@
+"""
+Convert Codex JSONL logs to a styled HTML transcript.
+
+This module provides a core conversion engine and a Tkinter GUI that supports
+batch conversion of JSONL log files into a readable HTML format.
+"""
+
 import json
 import sys
 import os
@@ -13,7 +20,14 @@ from datetime import datetime
 # ==========================================
 
 def extract_text_content(content_data):
-    """Helper to extract text from nested content structures."""
+    """Extract textual content from nested message structures.
+
+    Args:
+        content_data: Either a string or a list of content blocks (dicts).
+
+    Returns:
+        Concatenated text for supported block types, or an empty string.
+    """
     text_parts = []
     if isinstance(content_data, list):
         for item in content_data:
@@ -26,7 +40,15 @@ def extract_text_content(content_data):
     return "".join(text_parts)
 
 def format_timestamp(iso_str):
-    """Converts ISO 8601 timestamp to European format DD.MM.YYYY HH:MM:SS"""
+    """Convert an ISO 8601 timestamp to DD.MM.YYYY HH:MM:SS.
+
+    Args:
+        iso_str: Timestamp string, optionally with a trailing "Z" or
+            fractional seconds.
+
+    Returns:
+        Formatted timestamp, or the original string on parse errors.
+    """
     try:
         if iso_str.endswith('Z'):
             iso_str = iso_str[:-1]
@@ -38,10 +60,24 @@ def format_timestamp(iso_str):
         return iso_str
 
 def format_content(text):
+    """Render message content as safe, styled HTML.
+
+    This function escapes raw text, protects the IDE context block, converts
+    Markdown-like headers and code blocks to HTML, and restores the protected
+    content at the end.
+
+    Args:
+        text: Raw message content.
+
+    Returns:
+        HTML string safe for embedding inside the transcript.
+    """
     if not text: return ""
     safe_text = html.escape(text)
 
     # --- STEP 1: PROTECT CONTEXT SECTION ---
+    # The context block is shown inside a <details> section without extra
+    # formatting to preserve its original layout.
     context_placeholder = "__CONTEXT_PROTECTED__"
     context_content = ""
     has_context = False
@@ -59,6 +95,7 @@ def format_content(text):
     # --- STEP 2: PROCESS CODE BLOCKS ---
     code_blocks = {}
     def store_code_block(match):
+        """Replace code blocks with placeholders and store HTML versions."""
         key = f"__CODE_BLOCK_{len(code_blocks)}__"
         lang = match.group(1) if match.group(1) else "text"
         content = match.group(2)
@@ -93,6 +130,14 @@ def format_content(text):
     return safe_text
 
 def get_html_header(date_str=""):
+    """Build the HTML document header and top-of-page layout.
+
+    Args:
+        date_str: Optional session date string shown under the title.
+
+    Returns:
+        The HTML header portion including CSS and the filter sidebar.
+    """
     date_html = ""
     if date_str:
         # Reduced bottom margin here because the separator adds its own spacing
@@ -166,7 +211,6 @@ def get_html_header(date_str=""):
         .message.type-reasoning {{ background-color: #fff; border-left: 6px solid #6c757d; }}
 
         .role {{ font-size: 1.4em; font-weight: 700; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,0.1); display: flex; align-items: center; gap: 10px; }}
-        .role-user-chat .role, .role-user-log .role {{ flex-direction: row-reverse; justify-content: flex-start; border-bottom-color: rgba(0,0,0,0.05); }}
         .role-user-chat .role {{ color: #0056b3; }}
         .role-user-log .role {{ color: #5a7d9e; }}
         .role-assistant .role {{ color: #1e7e34; }}
@@ -213,6 +257,7 @@ def get_html_header(date_str=""):
 """
 
 def get_html_footer():
+    """Return the HTML footer and JavaScript for UI interactivity."""
     return """
 </div>
 </div>
@@ -252,6 +297,14 @@ def get_html_footer():
 """
 
 def get_session_date(lines):
+    """Extract the first available timestamp from JSONL lines.
+
+    Args:
+        lines: Iterable of JSONL strings.
+
+    Returns:
+        Formatted timestamp string or an empty string if none is found.
+    """
     for line in lines:
         try:
             data = json.loads(line)
@@ -261,6 +314,15 @@ def get_session_date(lines):
     return ""
 
 def convert_single_file(input_path):
+    """Convert a single JSONL log file into an HTML transcript.
+
+    Args:
+        input_path: Path to the JSONL input file.
+
+    Returns:
+        Tuple (success, message). On success, the output HTML is written
+        alongside the input file using the same base name.
+    """
     output_path = os.path.splitext(input_path)[0] + ".html"
     
     try:
@@ -270,7 +332,7 @@ def convert_single_file(input_path):
         session_date = get_session_date(lines)
         html_parts = [get_html_header(session_date)]
         
-        # INDEPENDENT HASH SETS
+        # Separate hash sets keep duplicates from different streams independent.
         seen_hashes_events = set()
         seen_hashes_stream = set()
         seen_hashes_other = set()
@@ -376,7 +438,9 @@ def convert_single_file(input_path):
 # ==========================================
 
 class BatchConverterGUI:
+    """Tkinter GUI for batch conversion of JSONL log files."""
     def __init__(self, root):
+        """Initialize the main window, layout, and widgets."""
         self.root = root
         self.root.title("Codex Batch Converter")
         self.root.geometry("700x500")
@@ -414,12 +478,14 @@ class BatchConverterGUI:
         ttk.Button(btn_frame, text="Start Conversion", command=self.start_batch).pack(side=tk.RIGHT)
 
     def browse_folder(self):
+        """Prompt for a folder and load its JSONL files into the list."""
         folder = filedialog.askdirectory()
         if folder:
             self.folder_path.set(folder)
             self.load_files(folder)
 
     def load_files(self, folder):
+        """Populate the tree with JSONL files found in the selected folder."""
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.file_items = []
@@ -432,6 +498,7 @@ class BatchConverterGUI:
                 self.file_items.append({"checked": True, "name": f, "path": full_path, "id": item_id})
 
     def toggle_check(self, event=None):
+        """Toggle selection state for the currently focused row."""
         selected_id = self.tree.focus()
         if not selected_id: return
         item_data = next((x for x in self.file_items if x["id"] == selected_id), None)
@@ -443,6 +510,7 @@ class BatchConverterGUI:
             self.tree.item(selected_id, values=(f"{icon}  {name}", current_status))
 
     def toggle_all(self):
+        """Select or deselect all items based on the header checkbox."""
         state = self.chk_all_var.get()
         icon = "☑" if state else "☐"
         for item in self.file_items:
@@ -451,6 +519,7 @@ class BatchConverterGUI:
             self.tree.item(item["id"], values=(f"{icon}  {item['name']}", current_status))
 
     def start_batch(self):
+        """Start background conversion for the selected files."""
         to_process = [x for x in self.file_items if x["checked"]]
         if not to_process:
             messagebox.showwarning("No Files", "No files selected for conversion.")
@@ -458,6 +527,7 @@ class BatchConverterGUI:
         threading.Thread(target=self.process_files, args=(to_process,)).start()
 
     def process_files(self, files):
+        """Convert each file and update status in the UI."""
         for item in files:
             self.update_status(item["id"], "Converting...")
             success, msg = convert_single_file(item["path"])
@@ -466,12 +536,14 @@ class BatchConverterGUI:
         messagebox.showinfo("Batch Complete", f"Finished processing {len(files)} files.")
 
     def update_status(self, item_id, status_text):
+        """Safely update the status column for a given tree row."""
         try:
             current_vals = self.tree.item(item_id, "values")
             self.tree.item(item_id, values=(current_vals[0], status_text))
         except: pass
 
 def create_gui():
+    """Launch the Tkinter GUI application."""
     root = tk.Tk()
     app = BatchConverterGUI(root)
     root.mainloop()
