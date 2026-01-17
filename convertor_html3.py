@@ -657,10 +657,10 @@ def _render_entries_table(entries):
         prompt_text = html.escape(entry["prompt"])
         href = html.escape(entry["href"])
         rows.append(
-            f"<tr><td><a href=\"{href}\">{date_text}</a></td><td class=\"prompt\">{prompt_text}</td></tr>"
+            f"<tr class=\"entry-row\"><td><a href=\"{href}\">{date_text}</a></td><td class=\"prompt\">{prompt_text}</td></tr>"
         )
     return (
-        "<table>"
+        "<table class=\"entries\">"
         "<thead><tr><th>Date</th><th>Initial prompt</th></tr></thead>"
         "<tbody>"
         + "".join(rows)
@@ -697,22 +697,94 @@ def _build_index_html(entries):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Codex Session Overview</title>
     <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; margin: 0; padding: 0; background-color: #f4f6f8; color: #333; }}
-        .wrapper {{ padding: 40px 20px; }}
+        :root {{
+            --bg: #f4f6f8;
+            --panel: #ffffff;
+            --panel-muted: #f7f9fb;
+            --ink: #1f2937;
+            --muted: #6b7280;
+            --accent: #1f9d8e;
+            --line: #e5e7eb;
+            --shadow: 0 8px 22px rgba(31, 41, 55, 0.12);
+        }}
+
+        body {{ font-family: "IBM Plex Sans", "Space Grotesk", sans-serif; line-height: 1.5; margin: 0; padding: 0; background: var(--bg); color: var(--ink); }}
+        .wrapper {{ padding: 40px 20px 60px; }}
         .container {{ width: 100%; max-width: 1100px; margin: 0 auto; }}
-        h1 {{ text-align: center; margin-bottom: 10px; }}
-        p {{ text-align: center; color: #666; }}
-        table {{ width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-radius: 10px; overflow: hidden; }}
-        th, td {{ text-align: left; padding: 14px 16px; border-bottom: 1px solid #eee; vertical-align: top; }}
-        th {{ background: #f0f2f5; font-weight: 700; }}
+        h1 {{ text-align: center; margin-bottom: 8px; font-family: "Space Grotesk", sans-serif; }}
+        p {{ text-align: center; color: var(--muted); margin-top: 0; }}
+        .search-bar {{ display: flex; justify-content: center; margin: 18px auto 28px; }}
+        .search-field {{ position: relative; width: min(620px, 100%); }}
+        .search-icon {{
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--muted);
+            font-size: 1em;
+            pointer-events: none;
+        }}
+        .search-bar input {{
+            width: 100%;
+            padding: 12px 14px;
+            padding-left: 40px;
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            background: var(--panel);
+            box-shadow: 0 2px 8px rgba(31, 41, 55, 0.08);
+            font-size: 0.98em;
+        }}
+        .search-bar input:focus {{ outline: 2px solid rgba(31, 157, 142, 0.25); border-color: rgba(31, 157, 142, 0.6); }}
+        .hidden {{ display: none !important; }}
+        .no-results {{
+            text-align: center;
+            color: var(--muted);
+            margin: 12px 0 0;
+            font-size: 0.95em;
+            display: none;
+        }}
+        .no-results.visible {{ display: block; }}
+
+        table.entries {{ width: 100%; border-collapse: collapse; background: var(--panel); box-shadow: var(--shadow); border-radius: 12px; overflow: hidden; }}
+        th, td {{ text-align: left; padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }}
+        th {{ background: var(--panel-muted); font-weight: 700; }}
         tr:nth-child(even) td {{ background: #fafbfc; }}
-        a {{ color: #007bff; text-decoration: none; font-weight: 600; }}
+        tr.entry-row:hover td {{ background: #eef6f5; }}
+        a {{ color: var(--accent); text-decoration: none; font-weight: 600; }}
         a:hover {{ text-decoration: underline; }}
         td.prompt {{ white-space: pre-wrap; }}
-        details.folder {{ margin: 12px 0; padding: 10px 12px; background: #fff; border: 1px solid #e2e6ea; border-radius: 8px; }}
-        details.folder > summary {{ cursor: pointer; font-weight: 700; color: #333; }}
-        details.folder[open] > summary {{ margin-bottom: 8px; }}
-        details.folder details.folder {{ margin-left: 16px; }}
+
+        details.folder {{
+            margin: 12px 0;
+            padding: 10px 12px 12px;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(31, 41, 55, 0.08);
+        }}
+        details.folder > summary {{
+            cursor: pointer;
+            font-weight: 700;
+            color: var(--ink);
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        details.folder > summary::before {{
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-right: 2px solid var(--muted);
+            border-bottom: 2px solid var(--muted);
+            transform: rotate(-45deg);
+            transition: transform 0.2s ease;
+        }}
+        details.folder[open] > summary::before {{
+            transform: rotate(45deg);
+        }}
+        details.folder[open] > summary {{ margin-bottom: 10px; }}
+        details.folder details.folder {{ margin-left: 16px; border-left: 2px solid rgba(31, 41, 55, 0.08); }}
     </style>
 </head>
 <body>
@@ -720,9 +792,60 @@ def _build_index_html(entries):
         <div class="container">
             <h1>Codex Session Overview</h1>
             <p>Click a date to open the full transcript.</p>
+            <div class="search-bar">
+                <div class="search-field">
+                    <span class="search-icon">&#128269;</span>
+                    <input id="search-box" type="search" placeholder="Search by date or prompt text...">
+                </div>
+            </div>
+            <div id="no-results" class="no-results">No sessions match your search.</div>
             {body}
         </div>
     </div>
+    <script>
+        const searchBox = document.getElementById('search-box');
+        const rows = Array.from(document.querySelectorAll('tr.entry-row'));
+        const folders = Array.from(document.querySelectorAll('details.folder'));
+        const noResults = document.getElementById('no-results');
+
+        function updateFolderVisibility(query) {{
+            for (const folder of folders) {{
+                folder.classList.add('hidden');
+            }}
+
+            for (const folder of [...folders].reverse()) {{
+                const hasVisibleRow = folder.querySelector('tr.entry-row:not(.hidden)');
+                const hasVisibleChild = folder.querySelector('details.folder:not(.hidden)');
+                if (hasVisibleRow || hasVisibleChild) {{
+                    folder.classList.remove('hidden');
+                    if (query) {{
+                        folder.open = true;
+                    }}
+                }}
+            }}
+        }}
+
+        function applyFilter() {{
+            const query = searchBox.value.trim().toLowerCase();
+            for (const row of rows) {{
+                const text = row.textContent.toLowerCase();
+                if (!query || text.includes(query)) {{
+                    row.classList.remove('hidden');
+                }} else {{
+                    row.classList.add('hidden');
+                }}
+            }}
+            updateFolderVisibility(query);
+            const hasVisibleRows = document.querySelector('tr.entry-row:not(.hidden)');
+            if (hasVisibleRows) {{
+                noResults.classList.remove('visible');
+            }} else {{
+                noResults.classList.add('visible');
+            }}
+        }}
+
+        searchBox.addEventListener('input', applyFilter);
+    </script>
 </body>
 </html>
 """
