@@ -31,6 +31,11 @@ ICON_REASONING      = "\N{BRAIN}"
 ICON_TOOL           = "\N{HAMMER AND WRENCH}"
 ICON_GEAR           = "\N{GEAR}"
 ICON_FILTERS        = "\N{LEFT-POINTING MAGNIFYING GLASS}"
+APP_ICON_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYElEQVR4nGNgwAMCTpz4D8"
+    "L41OAFJBng5ub2nxSM1YClq9YThYk2AOYFggbAnEWKC1AMgQnCFIiIiIAxLj5MLU4DiHEB"
+    "dQ2gOAzQYwHEtrGxQcHo8vRJByQbQFFSHjAAABG9kLrPW+PgAAAAAElFTkSuQmCC"
+)
 
 CONTEXT_SECTION_PATTERN = re.compile(
     r"(?ms)(^#+\s*Context from my IDE setup:)"
@@ -1296,9 +1301,18 @@ class BatchConverterGUI:
             pass
 
 
+def _set_window_icon(root):
+    try:
+        icon = tk.PhotoImage(data=APP_ICON_PNG_BASE64)
+        root.iconphoto(True, icon)
+        root._app_icon = icon
+    except tk.TclError:
+        pass
+
 def create_gui():
     """Launch the Tkinter GUI application."""
     root = tk.Tk()
+    _set_window_icon(root)
     app = BatchConverterGUI(root)
     root.mainloop()
 
