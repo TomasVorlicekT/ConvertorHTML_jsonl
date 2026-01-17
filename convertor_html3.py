@@ -410,7 +410,7 @@ def _build_response_message(payload, seen_hashes_stream, seen_hashes_other):
         return _build_message_html(role, "role-assistant", "🤖", text)
     if not _should_emit_text(text, seen_hashes_other):
         return ""
-    return _build_message_html(role, "role-developer", "⚙", text)
+    return _build_message_html(role, "role-developer", "⚙️", text)
 
 def _build_response_item(payload, seen_hashes_stream, seen_hashes_other):
     item_type = payload.get("type")
@@ -475,15 +475,19 @@ def _get_first_prompt(lines):
         if msg_type == "event_msg" and payload.get("type") == "user_message":
             text = payload.get("message", "")
             if text:
-                return text
-
-        if msg_type == "response_item" and payload.get("type") == "message":
-            role = payload.get("role", "").lower()
-            if role == "user":
-                text = extract_text_content(payload.get("content"))
-                if text:
-                    return text
+                return _extract_user_request_from_context(text)
     return ""
+
+def _extract_user_request_from_context(text):
+    if "Context from my IDE setup" not in text:
+        return text
+    match = re.search(
+        r'(?ms)^#+\s*My request for Codex:?\s*(.*?)(?=^#+\s|\Z)',
+        text,
+    )
+    if not match:
+        return text
+    return match.group(1).strip()
 
 def _truncate_prompt(prompt, limit=300):
     if not prompt:
