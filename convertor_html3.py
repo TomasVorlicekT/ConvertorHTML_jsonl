@@ -151,89 +151,172 @@ def get_html_header(date_str="", index_href="codex_sessions_overview.html"):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Codex Session Log</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; margin: 0; padding: 0; background-color: #e9ecef; color: #333; }}
-        
+        :root {{
+            --bg: #f4f6f8;
+            --panel: #ffffff;
+            --panel-muted: #f7f9fb;
+            --ink: #1f2937;
+            --muted: #6b7280;
+            --accent: #1f9d8e;
+            --accent-2: #e07a5f;
+            --line: #e5e7eb;
+            --shadow: 0 10px 28px rgba(31, 41, 55, 0.12);
+            --shadow-soft: 0 2px 10px rgba(31, 41, 55, 0.08);
+            --radius-lg: 18px;
+            --radius-md: 12px;
+        }}
+
+        * {{ box-sizing: border-box; }}
+
+        body {{
+            font-family: "IBM Plex Sans", "Space Grotesk", sans-serif;
+            line-height: 1.55;
+            margin: 0;
+            padding: 0;
+            color: var(--ink);
+            background: var(--bg);
+        }}
+
+        body::before {{
+            content: "";
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(1200px 600px at -10% -10%, rgba(31, 157, 142, 0.12), transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, rgba(224, 122, 95, 0.12), transparent 60%),
+                linear-gradient(180deg, #f8fafc 0%, #eef2f6 100%);
+            z-index: -1;
+            pointer-events: none;
+        }}
+
+        h1, h2, h3, h4 {{
+            font-family: "Space Grotesk", sans-serif;
+            letter-spacing: -0.01em;
+        }}
+
         /* --- LAYOUT --- */
-        .wrapper {{ padding: 40px 20px; }}
+        .wrapper {{ padding: 40px 24px 60px; }}
         .container {{ width: 100%; max-width: 1200px; margin: 0 auto; }}
-        
+
         /* HEADER SEPARATOR */
         .header-separator {{
             border: 0;
             height: 1px;
-            /* Gradient: Transparent -> Gray -> Transparent */
-            background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0));
-            margin: 20px auto 50px auto; /* Generous spacing below */
-            width: 80%; /* Don't span full width for a cleaner look */
+            background-image: linear-gradient(to right, rgba(31, 41, 55, 0), rgba(31, 41, 55, 0.2), rgba(31, 41, 55, 0));
+            margin: 18px auto 40px auto;
+            width: 80%;
         }}
-        
+
         /* SIDEBAR */
-        .sidebar {{ position: fixed; top: 20px; left: 20px; width: 220px; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); z-index: 1000; overflow: hidden; }}
-        .sidebar-header {{ background: #f8f9fa; padding: 15px 20px; border-bottom: 1px solid #eee; cursor: move; user-select: none; }}
-        .sidebar-header h3 {{ margin: 0; font-size: 1.1em; color: #333; }}
-        .sidebar-content {{ padding: 15px 20px; }}
+        .sidebar {{
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 230px;
+            background: var(--panel);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(31, 41, 55, 0.08);
+            z-index: 1000;
+            overflow: hidden;
+        }}
+        .sidebar-header {{
+            background: linear-gradient(135deg, rgba(31, 157, 142, 0.12), rgba(31, 157, 142, 0.02));
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--line);
+            cursor: move;
+            user-select: none;
+        }}
+        .sidebar-header h3 {{
+            margin: 0;
+            font-size: 1.05em;
+            color: var(--ink);
+            font-family: "Space Grotesk", sans-serif;
+        }}
+        .sidebar-content {{ padding: 14px 20px; }}
         .filter-group {{ display: flex; align-items: center; margin-bottom: 10px; cursor: pointer; }}
-        .filter-group input {{ margin-right: 10px; transform: scale(1.2); cursor: pointer; }}
-        .filter-group label {{ cursor: pointer; font-size: 0.95em; }}
-        .index-link {{ text-decoration: none; color: #333; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }}
-        .index-link:hover {{ color: #007bff; }}
-        
+        .filter-group input {{ margin-right: 10px; transform: scale(1.1); cursor: pointer; }}
+        .filter-group label {{ cursor: pointer; font-size: 0.95em; color: var(--muted); }}
+        .filter-group:hover label {{ color: var(--ink); }}
+        .index-link {{ text-decoration: none; color: var(--ink); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }}
+        .index-link:hover {{ color: var(--accent); }}
+
         @media (max-width: 1500px) {{
-            .sidebar {{ position: static; width: 100%; margin-bottom: 20px; box-shadow: none; border: 1px solid #ddd; }}
+            .sidebar {{ position: static; width: 100%; margin-bottom: 20px; box-shadow: none; border: 1px solid var(--line); }}
             .sidebar-header {{ cursor: default; }}
         }}
 
         /* --- MESSAGES (Chat Bubbles) --- */
-        .message {{ 
-            margin-bottom: 25px; 
-            padding: 25px; 
-            border-radius: 18px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
-            background: #fff;
+        .message {{
+            margin-bottom: 25px;
+            padding: 24px;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-soft);
+            background: var(--panel);
+            border: 1px solid rgba(31, 41, 55, 0.08);
             position: relative;
             box-sizing: border-box;
+            animation: rise 0.35s ease both;
         }}
         .hidden {{ display: none !important; }}
-        
+
         /* RIGHT ALIGNMENT */
-        .message.role-user-chat, 
+        .message.role-user-chat,
         .message.role-user-log {{
             width: 85%;
-            margin-left: auto; 
+            margin-left: auto;
             margin-right: 0;
-            border-top-right-radius: 4px;
+            border-top-right-radius: 6px;
         }}
 
-        .message.role-user-chat {{ background-color: #f8f9fa; border-right: 6px solid #007bff; }}
-        .message.role-user-log {{ background-color: #f3f6f9; border-right: 6px dashed #5da3f0; color: #555; }}
-        .message.role-assistant {{ background-color: #f0f7ff; border-left: 6px solid #28a745; }}
-        .message.role-developer {{ background-color: #fff4f4; border-left: 6px solid #dc3545; border: 1px dashed #eec; }}
-        .message.type-tool-call {{ background-color: #fff; border-left: 6px solid #d63384; }}
-        .message.type-tool-output {{ background-color: #2d2d2d; color: #ccc; border-left: 6px solid #6c757d; padding: 15px; border-radius: 12px; border-top-left-radius: 4px; }}
-        .message.type-reasoning {{ background-color: #fff; border-left: 6px solid #6c757d; }}
+        .message.role-user-chat {{ background-color: #f1f7ff; border-right: 6px solid #4d9de0; }}
+        .message.role-user-log {{ background-color: #f7f9fb; border-right: 6px dashed #7aa7d8; color: #4b5563; }}
+        .message.role-assistant {{ background-color: #f0fbf9; border-left: 6px solid var(--accent); }}
+        .message.role-developer {{ background-color: #fff6f0; border-left: 6px solid var(--accent-2); border: 1px dashed rgba(224, 122, 95, 0.4); }}
+        .message.type-tool-call {{ background-color: #f0fafa; border-left: 6px solid #2aa198; }}
+        .message.type-tool-output {{ background-color: #1f2937; color: #e5e7eb; border-left: 6px solid #6b7280; padding: 18px; border-radius: var(--radius-md); border-top-left-radius: 6px; }}
+        .message.type-reasoning {{ background-color: #f8fafb; border-left: 6px solid #9ca3af; }}
 
-        .role {{ font-size: 1.4em; font-weight: 700; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,0.1); display: flex; align-items: center; gap: 10px; }}
-        .role-user-chat .role {{ color: #0056b3; }}
-        .role-user-log .role {{ color: #5a7d9e; }}
-        .role-assistant .role {{ color: #1e7e34; }}
-        
-        details {{ background-color: #fff; border: 1px solid #dce2ea; border-radius: 8px; padding: 10px 15px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
-        summary {{ cursor: pointer; font-weight: 600; color: #6c757d; font-size: 0.95em; outline: none; user-select: none; }}
-        summary:hover {{ color: #333; }}
-        details[open] {{ border-color: #b1b7c1; }}
-        details[open] summary {{ margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; color: #333; }}
-        .context-content {{ font-family: "Consolas", "Monaco", monospace; font-size: 0.9em; color: #555; white-space: pre-wrap; }}
-        .content {{ white-space: pre-wrap; font-family: inherit; font-size: 1.05em; }}
-        .content h2 {{ margin-top: 25px; margin-bottom: 15px; font-size: 1.3em; font-weight: 700; color: #222; }}
-        .content h3 {{ margin-top: 15px; margin-bottom: 8px; font-size: 1.1em; font-weight: 600; color: #555; background: rgba(0,0,0,0.05); padding: 5px 12px; border-radius: 6px; display: inline-block; }}
-        .content h4 {{ margin-top: 10px; font-size: 1em; font-weight: 600; color: #666; }}
-        pre {{ background: #1e1e1e !important; color: #d4d4d4; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); overflow-x: auto; margin: 20px 0; font-size: 0.95em; }}
-        .inline-code {{ background: #eef1f6; padding: 2px 6px; border-radius: 4px; color: #c7254e; font-size: 0.9em; border: 1px solid #dce2ea; }}
-        .reasoning-content {{ font-style: italic; color: #555; }}
-        .reasoning-title {{ font-weight: bold; margin-bottom: 5px; display: block; font-style: normal; text-transform: uppercase; font-size: 0.8em; color: #6c757d; }}
-        .tool-header {{ font-size: 0.9em; color: #d63384; font-weight: bold; margin-bottom: 5px; }}
-        .truncated {{ color: #dc3545; font-style: italic; font-size: 0.85em; margin-top: 5px; }}
+        .role {{
+            font-size: 1.1em;
+            font-weight: 700;
+            margin-bottom: 14px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(31, 41, 55, 0.12);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        .role-user-chat .role {{ color: #1f4b99; }}
+        .role-user-log .role {{ color: #4b6a87; }}
+        .role-assistant .role {{ color: #0f766e; }}
+
+        details {{ background-color: #ffffff; border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 18px; box-shadow: 0 2px 6px rgba(31, 41, 55, 0.06); }}
+        summary {{ cursor: pointer; font-weight: 600; color: var(--muted); font-size: 0.95em; outline: none; user-select: none; }}
+        summary:hover {{ color: var(--ink); }}
+        details[open] {{ border-color: #cbd5e1; }}
+        details[open] summary {{ margin-bottom: 10px; border-bottom: 1px solid var(--line); padding-bottom: 6px; color: var(--ink); }}
+        .context-content {{ font-family: "IBM Plex Mono", monospace; font-size: 0.92em; color: #4b5563; white-space: pre-wrap; }}
+        .content {{ white-space: pre-wrap; font-family: inherit; font-size: 1.02em; }}
+        .content h2 {{ margin-top: 24px; margin-bottom: 14px; font-size: 1.25em; font-weight: 700; color: #111827; }}
+        .content h3 {{ margin-top: 14px; margin-bottom: 8px; font-size: 1.05em; font-weight: 600; color: #374151; background: rgba(31, 41, 55, 0.05); padding: 6px 12px; border-radius: 8px; display: inline-block; }}
+        .content h4 {{ margin-top: 10px; font-size: 0.98em; font-weight: 600; color: #4b5563; }}
+        pre {{ background: #0f172a !important; color: #dbeafe; padding: 18px; border-radius: 10px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18); overflow-x: auto; margin: 18px 0; font-size: 0.92em; font-family: "IBM Plex Mono", monospace; }}
+        .inline-code {{ background: #eef2f7; padding: 2px 6px; border-radius: 4px; color: #b45309; font-size: 0.9em; border: 1px solid #e2e8f0; font-family: "IBM Plex Mono", monospace; }}
+        .reasoning-content {{ font-style: italic; color: #4b5563; }}
+        .reasoning-title {{ font-weight: 700; margin-bottom: 6px; display: block; font-style: normal; text-transform: uppercase; font-size: 0.75em; color: #6b7280; letter-spacing: 0.08em; }}
+        .tool-header {{ font-size: 0.85em; color: #0f766e; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em; }}
+        .message.type-tool-output .tool-header {{ color: #e5e7eb; }}
+        .truncated {{ color: #fca5a5; font-style: italic; font-size: 0.85em; margin-top: 6px; }}
+
+        @keyframes rise {{
+            from {{ opacity: 0; transform: translateY(6px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
     </style>
 </head>
 <body>
