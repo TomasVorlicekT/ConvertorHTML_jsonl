@@ -538,25 +538,74 @@ def _collect_index_entries(input_folder, output_folder):
     entries.sort(key=lambda e: e["timestamp"] or datetime.min, reverse=True)
     return entries
 
+def _split_rel_path(rel_path):
+    parts = re.split(r"[\\\\/]+", rel_path)
+    return [part for part in parts if part]
+
+def _build_index_tree(entries):
+    root = {"name": "", "children": {}, "items": []}
+    for entry in entries:
+        parts = _split_rel_path(entry["rel_path"])
+        if not parts:
+            root["items"].append(entry)
+            continue
+        dir_parts = parts[:-1]
+        node = root
+        for part in dir_parts:
+            if part not in node["children"]:
+                node["children"][part] = {"name": part, "children": {}, "items": []}
+            node = node["children"][part]
+        node["items"].append(entry)
+    return root
+
+def _sort_entries(entries):
+    return sorted(
+        entries,
+        key=lambda e: e["timestamp"] or datetime.min,
+        reverse=True,
+    )
+
+def _render_entries_table(entries):
+    if not entries:
+        return ""
+    rows = []
+    for entry in _sort_entries(entries):
+        date_text = html.escape(entry["date"])
+        prompt_text = html.escape(entry["prompt"])
+        href = html.escape(entry["href"])
+        rows.append(
+            f"<tr><td><a href=\"{href}\">{date_text}</a></td><td class=\"prompt\">{prompt_text}</td></tr>"
+        )
+    return (
+        "<table>"
+        "<thead><tr><th>Date</th><th>Initial prompt</th></tr></thead>"
+        "<tbody>"
+        + "".join(rows)
+        + "</tbody></table>"
+    )
+
+def _render_folder_sections(node, level=0):
+    sections = []
+    for name in sorted(node["children"]):
+        child = node["children"][name]
+        child_html = _render_folder_sections(child, level + 1)
+        table_html = _render_entries_table(child["items"])
+        content = table_html + child_html
+        if not content:
+            continue
+        summary = html.escape(name)
+        sections.append(
+            f'<details class="folder level-{level + 1}"><summary>{summary}</summary>{content}</details>'
+        )
+    return "".join(sections)
+
 def _build_index_html(entries):
     if not entries:
         body = "<p>No converted sessions found.</p>"
     else:
-        rows = []
-        for entry in entries:
-            date_text = html.escape(entry["date"])
-            prompt_text = html.escape(entry["prompt"])
-            href = html.escape(entry["href"])
-            rows.append(
-                f"<tr><td><a href=\"{href}\">{date_text}</a></td><td class=\"prompt\">{prompt_text}</td></tr>"
-            )
-        body = (
-            "<table>"
-            "<thead><tr><th>Date</th><th>Initial prompt</th></tr></thead>"
-            "<tbody>"
-            + "".join(rows)
-            + "</tbody></table>"
-        )
+        tree = _build_index_tree(entries)
+        root_table = _render_entries_table(tree["items"])
+        body = root_table + _render_folder_sections(tree)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -577,6 +626,10 @@ def _build_index_html(entries):
         a {{ color: #007bff; text-decoration: none; font-weight: 600; }}
         a:hover {{ text-decoration: underline; }}
         td.prompt {{ white-space: pre-wrap; }}
+        details.folder {{ margin: 12px 0; padding: 10px 12px; background: #fff; border: 1px solid #e2e6ea; border-radius: 8px; }}
+        details.folder > summary {{ cursor: pointer; font-weight: 700; color: #333; }}
+        details.folder[open] > summary {{ margin-bottom: 8px; }}
+        details.folder details.folder {{ margin-left: 16px; }}
     </style>
 </head>
 <body>
