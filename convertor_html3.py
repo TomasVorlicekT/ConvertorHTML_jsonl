@@ -806,10 +806,10 @@ def _render_entries_table(entries: List[Dict[str, Any]]) -> str:
         if full_prompt and prompt_preview != full_prompt:
             prompt_html = (
                 '<details class="prompt-details">'
-                f'<summary><span class="prompt-preview">{prompt_preview_text}</span>'
-                '<span class="prompt-more">Show more</span>'
-                '<span class="prompt-less">Show less</span></summary>'
-                f'<div class="prompt-full">{prompt_full_text}</div>'
+                f'<summary><span class="prompt-preview">{prompt_preview_text + "..."}</span>'
+                '<span class="prompt-show-more">Show more</span></summary>'
+                f'<div class="prompt-full">{prompt_full_text + "\n"}'
+                '<span class="prompt-show-less" onclick="this.closest(\'details\').removeAttribute(\'open\')"> Show less</span></div>'
                 '</details>'
             )
         else:
@@ -907,24 +907,50 @@ def _build_index_html(entries: List[Dict[str, Any]]) -> str:
         }}
         .no-results.visible {{ display: block; }}
 
-        table.entries {{ width: 100%; border-collapse: collapse; background: var(--panel); box-shadow: var(--shadow); border-radius: 12px; overflow: hidden; }}
+        table.entries {{ 
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--panel);
+            box-shadow: var(--shadow);
+            border-radius: 12px;
+            overflow: hidden;
+            table-layout: fixed;
+        }}
         th, td {{ text-align: left; padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }}
         th {{ background: var(--panel-muted); font-weight: 700; }}
+        th:nth-child(1) {{
+            width: 120px;
+        }}
         tr:nth-child(even) td {{ background: #fafbfc; }}
         tr.entry-row:hover td {{ background: #eef6f5; }}
         a {{ color: var(--accent); text-decoration: none; font-weight: 600; }}
         a:hover {{ text-decoration: underline; }}
         td.prompt {{ white-space: pre-wrap; }}
-        td.prompt details.prompt-details {{ display: inline; }}
-        td.prompt details.prompt-details > summary {{ cursor: pointer; list-style: none; display: inline; }}
+        td.prompt details.prompt-details {{ display: block; width: 100%; }}
+        td.prompt details.prompt-details > summary {{ 
+            cursor: pointer; 
+            list-style: none;
+            display: block;
+            margin-top: 6px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+        }}
         td.prompt details.prompt-details > summary::-webkit-details-marker {{ display: none; }}
-        td.prompt details.prompt-details[open] > summary {{ display: block; margin-bottom: 6px; }}
-        td.prompt .prompt-more,
-        td.prompt .prompt-less {{ margin-left: 10px; font-size: 0.85em; color: var(--accent); font-weight: 600; }}
-        td.prompt .prompt-less {{ display: none; }}
-        td.prompt details.prompt-details[open] .prompt-preview,
-        td.prompt details.prompt-details[open] .prompt-more {{ display: none; }}
-        td.prompt details.prompt-details[open] .prompt-less {{ display: inline; }}
+        td.prompt details.prompt-details[open] > summary {{ background: transparent; padding: 0; margin-bottom: 0;}}
+        td.prompt .prompt-show-more,
+        td.prompt .prompt-show-less {{ 
+                display: block;       /* Makes the button take up its own full-width line */
+                text-align: right;    /* Aligns the text to the right side of that line */
+                margin-top: 8px;      /* Adds a little space above the button */
+                font-size: 0.85em; 
+                color: var(--accent); 
+                font-weight: 600; 
+                cursor: pointer;
+        }}
+
+        td.prompt details.prompt-details[open] .prompt-preview {{ display: none; }}
+        td.prompt details.prompt-details[open] .prompt-show-more {{ display: none; }}
         td.prompt .prompt-full {{ margin-top: 6px; padding: 8px 10px; background: var(--panel-muted); border-radius: 8px; white-space: pre-wrap; }}
 
         details.folder {{
