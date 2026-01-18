@@ -741,7 +741,7 @@ def _collect_index_entries(input_folder: str, output_folder: str) -> List[Dict[s
 
             date_display = get_session_date(lines)
             timestamp = _get_session_timestamp(lines)
-            prompt = _truncate_prompt(_get_first_prompt(lines))
+            prompt = _get_first_prompt(lines)
             href = _path_to_href(os.path.relpath(output_path, output_folder))
             entries.append({
                 "date": date_display or "Unknown",
@@ -797,10 +797,25 @@ def _render_entries_table(entries: List[Dict[str, Any]]) -> str:
     rows = []
     for entry in _sort_entries(entries):
         date_text = html.escape(entry["date"])
-        prompt_text = html.escape(entry["prompt"])
+        full_prompt = entry["prompt"] or ""
+        prompt_preview = _truncate_prompt(full_prompt)
+        prompt_preview_text = html.escape(prompt_preview)
+        prompt_full_text = html.escape(full_prompt)
         href = html.escape(entry["href"])
+        prompt_data = html.escape(full_prompt, quote=True)
+        if full_prompt and prompt_preview != full_prompt:
+            prompt_html = (
+                '<details class="prompt-details">'
+                f'<summary><span class="prompt-preview">{prompt_preview_text}</span>'
+                '<span class="prompt-more">Show more</span>'
+                '<span class="prompt-less">Show less</span></summary>'
+                f'<div class="prompt-full">{prompt_full_text}</div>'
+                '</details>'
+            )
+        else:
+            prompt_html = prompt_preview_text
         rows.append(
-            f"<tr class=\"entry-row\"><td><a href=\"{href}\">{date_text}</a></td><td class=\"prompt\">{prompt_text}</td></tr>"
+            f"<tr class=\"entry-row\" data-prompt=\"{prompt_data}\"><td><a href=\"{href}\">{date_text}</a></td><td class=\"prompt\">{prompt_html}</td></tr>"
         )
     return (
         "<table class=\"entries\">"
@@ -900,6 +915,17 @@ def _build_index_html(entries: List[Dict[str, Any]]) -> str:
         a {{ color: var(--accent); text-decoration: none; font-weight: 600; }}
         a:hover {{ text-decoration: underline; }}
         td.prompt {{ white-space: pre-wrap; }}
+        td.prompt details.prompt-details {{ display: inline; }}
+        td.prompt details.prompt-details > summary {{ cursor: pointer; list-style: none; display: inline; }}
+        td.prompt details.prompt-details > summary::-webkit-details-marker {{ display: none; }}
+        td.prompt details.prompt-details[open] > summary {{ display: block; margin-bottom: 6px; }}
+        td.prompt .prompt-more,
+        td.prompt .prompt-less {{ margin-left: 10px; font-size: 0.85em; color: var(--accent); font-weight: 600; }}
+        td.prompt .prompt-less {{ display: none; }}
+        td.prompt details.prompt-details[open] .prompt-preview,
+        td.prompt details.prompt-details[open] .prompt-more {{ display: none; }}
+        td.prompt details.prompt-details[open] .prompt-less {{ display: inline; }}
+        td.prompt .prompt-full {{ margin-top: 6px; padding: 8px 10px; background: var(--panel-muted); border-radius: 8px; white-space: pre-wrap; }}
 
         details.folder {{
             margin: 12px 0;
@@ -975,7 +1001,7 @@ def _build_index_html(entries: List[Dict[str, Any]]) -> str:
         function applyFilter() {{
             const query = searchBox.value.trim().toLowerCase();
             for (const row of rows) {{
-                const text = row.textContent.toLowerCase();
+                const text = (row.textContent + " " + (row.dataset.prompt || "")).toLowerCase();
                 if (!query || text.includes(query)) {{
                     row.classList.remove('hidden');
                 }} else {{
