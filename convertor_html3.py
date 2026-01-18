@@ -931,8 +931,8 @@ def _build_index_html(entries: List[Dict[str, Any]]) -> str:
             cursor: pointer; 
             list-style: none;
             display: block;
-            margin-top: 6px;
-            padding: 8px 10px;
+            box-sizing: border-box;
+            padding: 8px 12px;
             border-radius: 8px;
             white-space: pre-wrap;
         }}
@@ -951,7 +951,7 @@ def _build_index_html(entries: List[Dict[str, Any]]) -> str:
 
         td.prompt details.prompt-details[open] .prompt-preview {{ display: none; }}
         td.prompt details.prompt-details[open] .prompt-show-more {{ display: none; }}
-        td.prompt .prompt-full {{ margin-top: 6px; padding: 8px 10px; background: var(--panel-muted); border-radius: 8px; white-space: pre-wrap; }}
+        td.prompt .prompt-full {{box-sizing: border-box; padding: 8px 12px; background: var(--panel-muted); border-radius: 8px; white-space: pre-wrap; }}
 
         details.folder {{
             margin: 12px 0;
