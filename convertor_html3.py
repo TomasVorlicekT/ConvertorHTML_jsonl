@@ -21,6 +21,7 @@ import os
 import re
 import threading
 from datetime import datetime
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -74,7 +75,7 @@ MY_REQUEST_HEADER_REPLACEMENT = f"<h2>{ICON_USER_REQUEST} My request for Codex:<
 # ==========================================
 
 
-def extract_text_content(content_data):
+def extract_text_content(content_data: Any) -> str:
     """Extract textual content from nested message structures.
 
     Args:
@@ -95,7 +96,8 @@ def extract_text_content(content_data):
     return "".join(text_parts)
 
 
-def _normalize_iso_timestamp(iso_str: str):
+def _normalize_iso_timestamp(iso_str: str) -> str:
+    """Normalize ISO timestamps by removing UTC suffix and fractional seconds."""
     if not isinstance(iso_str, str):
         return ""
     normalized = iso_str.rstrip("Z")                # Getting rid of the 'Zulu' = 'UTC' designation
@@ -104,7 +106,8 @@ def _normalize_iso_timestamp(iso_str: str):
     return normalized
 
 
-def _parse_iso_datetime(iso_str: str):
+def _parse_iso_datetime(iso_str: str) -> Optional[datetime]:
+    """Parse an ISO timestamp string into a datetime object."""
     normalized = _normalize_iso_timestamp(iso_str)
     if not normalized:
         return None
@@ -114,7 +117,7 @@ def _parse_iso_datetime(iso_str: str):
         return None
 
 
-def format_timestamp(iso_str):
+def format_timestamp(iso_str: Any) -> Any:
     """Convert an ISO 8601 timestamp to DD.MM.YYYY HH:MM:SS.
 
     Args:
@@ -130,7 +133,8 @@ def format_timestamp(iso_str):
     return dt.strftime(DATE_FORMAT) if dt else iso_str
 
 
-def _extract_context_block(text):
+def _extract_context_block(text: str) -> Tuple[str, Optional[str]]:
+    """Extract and replace the IDE context section with a placeholder."""
     match = CONTEXT_SECTION_PATTERN.search(text)
     if not match:
         return text, None
@@ -139,7 +143,8 @@ def _extract_context_block(text):
     return replaced_text, context_content
 
 
-def _extract_code_blocks(text):
+def _extract_code_blocks(text: str) -> Tuple[str, Dict[str, str]]:
+    """Replace fenced code blocks with placeholders and collect their HTML."""
     code_blocks = {}
 
     def store_code_block(match):
@@ -152,7 +157,8 @@ def _extract_code_blocks(text):
     return CODE_BLOCK_PATTERN.sub(store_code_block, text), code_blocks
 
 
-def _apply_markdown_formatting(text):
+def _apply_markdown_formatting(text: str) -> str:
+    """Convert a subset of markdown-style formatting into HTML tags."""
     text = NEWLINES_BEFORE_HEADER_PATTERN.sub("\n", text)
     text = NEWLINES_PATTERN.sub("\n\n", text)
     text = MY_REQUEST_HEADER_PATTERN.sub(MY_REQUEST_HEADER_REPLACEMENT, text)
@@ -163,7 +169,8 @@ def _apply_markdown_formatting(text):
     return text
 
 
-def _wrap_context_block(context_content):
+def _wrap_context_block(context_content: str) -> str:
+    """Wrap the IDE context section in a collapsible <details> block."""
     return (
         "<details><summary>Context from my IDE setup</summary>\n"
         f"<div class=\"context-content\">{context_content}</div>\n"
@@ -171,7 +178,7 @@ def _wrap_context_block(context_content):
     )
 
 
-def format_content(text):
+def format_content(text: str) -> str:
     """Render message content as safe, styled HTML.
 
     This function escapes raw text, protects the IDE context block, converts
@@ -204,7 +211,7 @@ def format_content(text):
     return escaped_text
 
 
-def get_html_header(date_str="", index_href="codex_sessions_overview.html"):
+def get_html_header(date_str: str = "", index_href: str = "codex_sessions_overview.html") -> str:
     """Build the HTML document header and top-of-page layout.
 
     Args:
@@ -420,7 +427,7 @@ def get_html_header(date_str="", index_href="codex_sessions_overview.html"):
 """
 
 
-def get_html_footer():
+def get_html_footer() -> str:
     """Return the HTML footer and JavaScript for UI interactivity."""
     return """
 </div>
@@ -461,7 +468,7 @@ def get_html_footer():
 """
 
 
-def get_session_date(lines):
+def get_session_date(lines: Iterable[str]) -> str:
     """Extract the first available timestamp from JSONL lines.
 
     Args:
@@ -482,7 +489,7 @@ def get_session_date(lines):
     return ""
 
 
-def _should_emit_text(text, seen_set):
+def _should_emit_text(text: str, seen_set: Set[int]) -> bool:
     """Determine if text is unique and should be included in the html output.
 
     This function filters out empty strings and exact duplicates. It uses
@@ -506,7 +513,8 @@ def _should_emit_text(text, seen_set):
     return True
 
 
-def _build_message_html(role, css_class, icon, text):
+def _build_message_html(role: str, css_class: str, icon: str, text: str) -> str:
+    """Render a chat bubble for a single message."""
     return (
         f'<div class="message {css_class}">'
         f'<div class="role">{icon} {role}</div>'
@@ -515,7 +523,8 @@ def _build_message_html(role, css_class, icon, text):
     )
 
 
-def _build_reasoning_html(text):
+def _build_reasoning_html(text: str) -> str:
+    """Render a styled reasoning block."""
     return (
         '<div class="message type-reasoning">'
         f'<span class="reasoning-title">{ICON_REASONING} Reasoning</span>'
@@ -524,7 +533,8 @@ def _build_reasoning_html(text):
     )
 
 
-def _format_tool_args(args):
+def _format_tool_args(args: Any) -> str:
+    """Pretty-print tool arguments as JSON when possible."""
     try:
         parsed = json.loads(args) if isinstance(args, str) else args
         return json.dumps(parsed, indent=2)
@@ -532,7 +542,8 @@ def _format_tool_args(args):
         return str(args)
 
 
-def _build_tool_call_html(tool, args, lang="json"):
+def _build_tool_call_html(tool: str, args: Any, lang: str = "json") -> str:
+    """Render a tool call message with formatted arguments."""
     pretty = _format_tool_args(args)
     return (
         '<div class="message type-tool-call">'
@@ -542,7 +553,8 @@ def _build_tool_call_html(tool, args, lang="json"):
     )
 
 
-def _build_custom_tool_call_html(tool, inp):
+def _build_custom_tool_call_html(tool: str, inp: str) -> str:
+    """Render a custom tool call message."""
     return (
         '<div class="message type-tool-call">'
         f'<div class="tool-header">{ICON_TOOL} Tool Call: {html.escape(tool)}</div>'
@@ -551,7 +563,8 @@ def _build_custom_tool_call_html(tool, inp):
     )
 
 
-def _build_tool_output_html(output):
+def _build_tool_output_html(output: str) -> str:
+    """Render tool output with truncation when needed."""
     truncated_note = ""
     if output and len(output) > TOOL_OUTPUT_TRUNCATE_LIMIT:
         output = output[:TOOL_OUTPUT_TRUNCATE_LIMIT]
@@ -565,7 +578,8 @@ def _build_tool_output_html(output):
     )
 
 
-def _build_event_message(payload, seen_hashes_events, seen_hashes_other):
+def _build_event_message(payload: Dict[str, Any], seen_hashes_events: Set[int], seen_hashes_other: Set[int]) -> str:
+    """Convert an event_msg payload into a rendered HTML block."""
     event_type = payload.get("type")
     if event_type not in ["agent_message", "user_message"]:
         return ""
@@ -581,7 +595,8 @@ def _build_event_message(payload, seen_hashes_events, seen_hashes_other):
     return _build_message_html("Assistant", "role-assistant", ICON_ASSISTANT, text)
 
 
-def _build_response_message(payload, seen_hashes_stream, seen_hashes_other):
+def _build_response_message(payload: Dict[str, Any], seen_hashes_stream: Set[int], seen_hashes_other: Set[int]) -> str:
+    """Convert a response message payload into HTML."""
     role = payload.get("role", "unknown").capitalize()
     text = extract_text_content(payload.get("content"))
     if not text:
@@ -600,7 +615,8 @@ def _build_response_message(payload, seen_hashes_stream, seen_hashes_other):
     return _build_message_html(role, "role-developer", ICON_GEAR, text)
 
 
-def _build_response_item(payload, seen_hashes_stream, seen_hashes_other):
+def _build_response_item(payload: Dict[str, Any], seen_hashes_stream: Set[int], seen_hashes_other: Set[int]) -> str:
+    """Render response_item records into message HTML."""
     item_type = payload.get("type")
     if item_type == "message":
         return _build_response_message(payload, seen_hashes_stream, seen_hashes_other)
@@ -621,7 +637,8 @@ def _build_response_item(payload, seen_hashes_stream, seen_hashes_other):
     return ""
 
 
-def _parse_json_line(line):
+def _parse_json_line(line: str) -> Optional[Dict[str, Any]]:
+    """Parse a JSONL line into a dict; return None on errors."""
     try:
         return json.loads(line)
     except Exception:
@@ -632,13 +649,14 @@ def _path_to_href(path: str) -> str:
     """
     Convert a file system path into a relative URL.
     
-    On Windows, os.sep is \. On Linux/Mac, it is /.
+    On Windows, os.sep is \\. On Linux/Mac, it is /.
     We need to ensure everything is a forward slash for HTML.
     """
     return path.replace(os.sep, "/")
 
 
-def _get_session_timestamp(lines):
+def _get_session_timestamp(lines: Iterable[str]) -> Optional[datetime]:
+    """Return the first valid timestamp parsed from JSONL lines."""
     for line in lines:
         data = _parse_json_line(line)
         if not data:
@@ -655,7 +673,8 @@ def _get_session_timestamp(lines):
     return None
 
 
-def _get_first_prompt(lines):
+def _get_first_prompt(lines: Iterable[str]) -> str:
+    """Extract the first user prompt from the JSONL stream."""
     for line in lines:
         data = _parse_json_line(line)
         if not data:
@@ -670,7 +689,8 @@ def _get_first_prompt(lines):
     return ""
 
 
-def _extract_user_request_from_context(text):
+def _extract_user_request_from_context(text: str) -> str:
+    """Strip IDE context blocks and return the user's request text."""
     if "Context from my IDE setup" not in text:
         return text
     match = REQUEST_SECTION_PATTERN.search(text)
@@ -679,13 +699,15 @@ def _extract_user_request_from_context(text):
     return match.group(1).strip()
 
 
-def _truncate_prompt(prompt, limit=PROMPT_TRUNCATE_LIMIT):
+def _truncate_prompt(prompt: str, limit: int = PROMPT_TRUNCATE_LIMIT) -> str:
+    """Trim long prompts for the overview table."""
     if not prompt:
         return ""
     return prompt[:limit]
 
 
-def _collect_index_entries(input_folder, output_folder):
+def _collect_index_entries(input_folder: str, output_folder: str) -> List[Dict[str, Any]]:
+    """Collect index entries for converted sessions under the output folder."""
     entries = []
     for dirpath, _, filenames in os.walk(input_folder):
         for filename in filenames:
@@ -721,12 +743,14 @@ def _collect_index_entries(input_folder, output_folder):
     return entries
 
 
-def _split_rel_path(rel_path):
+def _split_rel_path(rel_path: str) -> List[str]:
+    """Split a relative path into folder parts."""
     parts = REL_PATH_SPLIT_PATTERN.split(rel_path)
     return [part for part in parts if part]
 
 
-def _build_index_tree(entries):
+def _build_index_tree(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build a nested folder tree structure for index rendering."""
     root = {"name": "", "children": {}, "items": []}
     for entry in entries:
         parts = _split_rel_path(entry["rel_path"])
@@ -743,15 +767,17 @@ def _build_index_tree(entries):
     return root
 
 
-def _sort_entries(entries):
+def _sort_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Sort entries by timestamp descending."""
     return sorted(
         entries,
         key=lambda e: e["timestamp"] or datetime.min,
-        reverse=True,
+        reverse=False,
     )
 
 
-def _render_entries_table(entries):
+def _render_entries_table(entries: List[Dict[str, Any]]) -> str:
+    """Render a table of session entries for a single folder."""
     if not entries:
         return ""
     rows = []
@@ -771,7 +797,8 @@ def _render_entries_table(entries):
     )
 
 
-def _render_folder_sections(node, level=0):
+def _render_folder_sections(node: Dict[str, Any], level: int = 0) -> str:
+    """Render nested <details> sections for folder trees."""
     sections = []
     for name in sorted(node["children"]):
         child = node["children"][name]
@@ -787,7 +814,8 @@ def _render_folder_sections(node, level=0):
     return "".join(sections)
 
 
-def _build_index_html(entries):
+def _build_index_html(entries: List[Dict[str, Any]]) -> str:
+    """Generate the HTML overview page for all sessions."""
     if not entries:
         body = "<p>No converted sessions found.</p>"
     else:
@@ -956,7 +984,8 @@ def _build_index_html(entries):
 """
 
 
-def write_index_html_for_folder(input_folder, output_folder):
+def write_index_html_for_folder(input_folder: str, output_folder: str) -> str:
+    """Write the overview HTML file for a folder and return its path."""
     os.makedirs(output_folder, exist_ok=True)
     entries = _collect_index_entries(input_folder, output_folder)
     html_content = _build_index_html(entries)
@@ -966,7 +995,11 @@ def write_index_html_for_folder(input_folder, output_folder):
     return output_path
 
 
-def convert_single_file(input_path, output_folder=None, input_root=None):
+def convert_single_file(
+    input_path: str,
+    output_folder: Optional[str] = None,
+    input_root: Optional[str] = None,
+) -> Tuple[bool, str]:
     """Convert a single JSONL log file into an HTML transcript.
 
     Args:
@@ -1053,7 +1086,7 @@ def convert_single_file(input_path, output_folder=None, input_root=None):
 
 class BatchConverterGUI:
     """Tkinter GUI for batch conversion of JSONL log files."""
-    def __init__(self, root):
+    def __init__(self, root: tk.Tk) -> None:
         """Initialize the main window, layout, and widgets."""
         self.root = root
         self.root.title("Codex Batch Converter")
@@ -1065,7 +1098,7 @@ class BatchConverterGUI:
         self.folder_path = tk.StringVar()
         self.output_folder_path = tk.StringVar()
         self.output_folder_custom = False
-        self.tree_items = {}
+        self.tree_items: Dict[str, Dict[str, Any]] = {}
 
         top_frame = ttk.Frame(root, padding="10")
         top_frame.grid(row=0, column=0, sticky="ew")
@@ -1108,7 +1141,7 @@ class BatchConverterGUI:
         ttk.Checkbutton(btn_frame, text="Select All", variable=self.chk_all_var, command=self.toggle_all).pack(side=tk.LEFT)
         ttk.Button(btn_frame, text="Start Conversion", command=self.start_batch).pack(side=tk.RIGHT)
 
-    def browse_folder(self):
+    def browse_folder(self) -> None:
         """Prompt for a folder and load its JSONL files into the list."""
         folder = filedialog.askdirectory()
         if folder:
@@ -1117,7 +1150,7 @@ class BatchConverterGUI:
                 self.output_folder_path.set(folder)
             self.load_files(folder)
 
-    def on_log_folder_change(self, event=None):
+    def on_log_folder_change(self, event: Optional[tk.Event] = None) -> None:
         """Handle manual edits to the log folder entry."""
         folder = self.folder_path.get().strip()
         if not folder or not os.path.exists(folder):
@@ -1126,20 +1159,21 @@ class BatchConverterGUI:
             self.output_folder_path.set(folder)
         self.load_files(folder)
 
-    def browse_output_folder(self):
+    def browse_output_folder(self) -> None:
         """Prompt for an output folder."""
         folder = filedialog.askdirectory()
         if folder:
             self.output_folder_path.set(folder)
             self.output_folder_custom = True
 
-    def on_output_folder_change(self, event=None):
+    def on_output_folder_change(self, event: Optional[tk.Event] = None) -> None:
         """Handle manual edits to the output folder entry."""
         folder = self.output_folder_path.get().strip()
         if folder:
             self.output_folder_custom = True
 
-    def _find_jsonl_files(self, folder):
+    def _find_jsonl_files(self, folder: str) -> List[str]:
+        """Find JSONL files under a folder (recursive)."""
         results = []
         for dirpath, _, filenames in os.walk(folder):
             for filename in filenames:
@@ -1147,7 +1181,8 @@ class BatchConverterGUI:
                     results.append(os.path.join(dirpath, filename))
         return sorted(results)
 
-    def _format_item_label(self, name, state):
+    def _format_item_label(self, name: str, state: str) -> str:
+        """Format a tree label with a selection checkbox marker."""
         if state == "checked":
             box = "[x]"
         elif state == "partial":
@@ -1156,7 +1191,8 @@ class BatchConverterGUI:
             box = "[ ]"
         return f"{box}  {name}"
 
-    def _update_item_label(self, item_id):
+    def _update_item_label(self, item_id: str) -> None:
+        """Refresh the label and status for a tree item."""
         item = self.tree_items[item_id]
         current_values = self.tree.item(item_id, "values")
         current_status = current_values[0] if current_values else ""
@@ -1166,7 +1202,8 @@ class BatchConverterGUI:
             values=(current_status,),
         )
 
-    def _set_item_state(self, item_id, state, cascade=False):
+    def _set_item_state(self, item_id: str, state: str, cascade: bool = False) -> None:
+        """Set an item's selection state, optionally cascading to children."""
         item = self.tree_items.get(item_id)
         if not item:
             return
@@ -1176,7 +1213,8 @@ class BatchConverterGUI:
             for child_id in self.tree.get_children(item_id):
                 self._set_item_state(child_id, state, cascade=True)
 
-    def _update_parent_states(self, item_id):
+    def _update_parent_states(self, item_id: str) -> None:
+        """Update parent items to reflect aggregated child state."""
         parent_id = self.tree.parent(item_id)
         while parent_id:
             child_ids = self.tree.get_children(parent_id)
@@ -1194,7 +1232,8 @@ class BatchConverterGUI:
                 self._update_item_label(parent_id)
             parent_id = self.tree.parent(parent_id)
 
-    def _sync_select_all_state(self):
+    def _sync_select_all_state(self) -> None:
+        """Sync the 'Select All' checkbox with current file states."""
         file_states = [
             item["state"]
             for item in self.tree_items.values()
@@ -1204,7 +1243,7 @@ class BatchConverterGUI:
         if self.chk_all_var.get() != all_checked:
             self.chk_all_var.set(all_checked)
 
-    def load_files(self, folder):
+    def load_files(self, folder: str) -> None:
         """Populate the tree with JSONL files found in the selected folder."""
         for item in self.tree.get_children():
             self.tree.delete(item)
@@ -1222,7 +1261,8 @@ class BatchConverterGUI:
             parent_id = self._ensure_dir_item(dir_items, folder, rel_dir)
             self._add_file_item(parent_id, file_path)
 
-    def _ensure_dir_item(self, dir_items, folder, rel_dir):
+    def _ensure_dir_item(self, dir_items: Dict[str, str], folder: str, rel_dir: str) -> str:
+        """Ensure directory nodes exist in the tree and return the parent id."""
         if rel_dir == ".":
             return ""
         current_rel = ""
@@ -1248,7 +1288,8 @@ class BatchConverterGUI:
             parent_id = dir_items[current_rel]
         return parent_id
 
-    def _add_file_item(self, parent_id, file_path):
+    def _add_file_item(self, parent_id: str, file_path: str) -> None:
+        """Add a JSONL file row to the tree view."""
         file_name = os.path.basename(file_path)
         file_id = self.tree.insert(
             parent_id,
@@ -1264,7 +1305,7 @@ class BatchConverterGUI:
             "state": "checked",
         }
 
-    def toggle_check(self, event=None):
+    def toggle_check(self, event: Optional[tk.Event] = None) -> None:
         """Toggle selection state for the currently focused row."""
         selected_id = self.tree.focus()
         if not selected_id:
@@ -1277,13 +1318,13 @@ class BatchConverterGUI:
         self._update_parent_states(selected_id)
         self._sync_select_all_state()
 
-    def toggle_all(self):
+    def toggle_all(self) -> None:
         """Select or deselect all items based on the header checkbox."""
         state = "checked" if self.chk_all_var.get() else "unchecked"
         for item_id in self.tree.get_children(""):
             self._set_item_state(item_id, state, cascade=True)
 
-    def start_batch(self):
+    def start_batch(self) -> None:
         """Start background conversion for the selected files."""
         to_process = [
             item for item in self.tree_items.values()
@@ -1294,7 +1335,7 @@ class BatchConverterGUI:
             return
         threading.Thread(target=self.process_files, args=(to_process,)).start()
 
-    def process_files(self, files):
+    def process_files(self, files: List[Dict[str, Any]]) -> None:
         """Convert each file and update status in the UI."""
         input_root = self.folder_path.get().strip()
         output_folder = self.output_folder_path.get().strip() or input_root
@@ -1313,11 +1354,11 @@ class BatchConverterGUI:
         # Safe call to show final messagebox on main thread
         self.root.after(0, lambda: messagebox.showinfo("Batch Complete", f"Finished processing {len(files)} files."))
 
-    def update_status(self, item_id, status_text):
+    def update_status(self, item_id: str, status_text: str) -> None:
         """Safely update the status column for a given tree row using the main thread."""
         self.root.after(0, lambda: self._internal_update_status(item_id, status_text))
 
-    def _internal_update_status(self, item_id, status_text):
+    def _internal_update_status(self, item_id: str, status_text: str) -> None:
         """Internal method called by the main thread to modify the widget."""
         try:
             self.tree.item(item_id, values=(status_text,))
@@ -1325,7 +1366,8 @@ class BatchConverterGUI:
             pass
 
 
-def _set_window_icon(root):
+def _set_window_icon(root: tk.Tk) -> None:
+    """Apply the embedded app icon to the Tk root window."""
     try:
         icon = tk.PhotoImage(data=APP_ICON_PNG_BASE64)
         root.iconphoto(True, icon)
@@ -1333,7 +1375,7 @@ def _set_window_icon(root):
     except tk.TclError:
         pass
 
-def create_gui():
+def create_gui() -> None:
     """Launch the Tkinter GUI application."""
     root = tk.Tk()
     _set_window_icon(root)
