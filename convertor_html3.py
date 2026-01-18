@@ -1,18 +1,32 @@
 """
 Convert Codex JSONL logs to a styled HTML transcript.
 
-This module provides a core conversion engine and a Tkinter GUI that supports
+This script provides a core conversion engine and a Tkinter GUI that supports
 batch conversion of JSONL log files into a readable HTML format.
+The script preserves the original JSONL order.
 
 Log structure notes:
-- event_msg entries represent chat-style messages (user/assistant) recorded as
-  high-level events in the log.
-- response_item entries represent the streamed response pipeline; user entries
-  there are typically stream logs, while assistant/tool/developer entries are
-  output content and tool traces.
-- The transcript preserves the original JSONL order; only the overview index
-  applies sorting, grouping sessions by folder path and listing entries in
-  descending timestamp order within each group.
+- "event_msg" entries in the log are what the user sees as chat-style messages (user/assistant), 
+    ("token_count" message is ignored, and "agent_reasoning" is dealth with in the section below
+
+- "response_item" entries seem to represent the actual history passed back and forth to the LLM. Below are its subcategories:
+    
+    "type":"message": Chat messages with extra context (compared to event_msg).
+
+        "role":"user": Input into AI from user's side.
+
+        "role":"assistant": Output from LLM.
+
+        "role":"developer": System instructions that define how the AI behaves.
+
+    "type":"function_call": The model deciding to use a tool (e.g., shell_command, or our list_mcp_resources). It shows the arguments the AI generated.
+
+    "function_call_output": The result returned by the tool (e.g., the result of a shell command or database query).
+
+    "type":"reasoning": The internal "Chain of Thought" summary used by the model.
+
+- ("token_count" tell us the tokens statistics) => IGNORED
+
 """
 
 import html
