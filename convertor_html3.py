@@ -126,7 +126,7 @@ def _parse_iso_datetime(iso_str: str) -> Optional[datetime]:
     if not normalized:
         return None
     try:
-        return datetime.fromisoformat(normalized)  # Converts str from text into a Python object that represents a specific point in time
+        return datetime.fromisoformat(normalized)  # Converts str into a Python object that represents a specific point in time
     except ValueError:
         return None
 
@@ -1440,6 +1440,7 @@ def _set_window_icon(root: tk.Tk) -> None:
         root._app_icon = icon
     except tk.TclError:
         pass
+
 
 def create_gui() -> None:
     """Launch the Tkinter GUI application."""
