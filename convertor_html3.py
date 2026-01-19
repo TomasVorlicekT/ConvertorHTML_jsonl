@@ -530,7 +530,7 @@ def _build_message_html(role: str, css_class: str, icon: str, text: str) -> str:
     """Render a chat bubble for a single message."""
     return (
         f'<div class="message {css_class}">'
-        f'<div class="role">{icon} {role}</div>'
+        f'<div class="role">{icon} {role.capitalize()}</div>'
         f'<div class="content">{format_content(text)}</div>'
         f'</div>'
     )
@@ -591,50 +591,57 @@ def _build_tool_output_html(output: str) -> str:
     )
 
 
-def _build_event_message(payload: Dict[str, Any], processed_user_messages: Set[int], processed_events_other: Set[int]) -> str:
+def _build_event_message(payload: Dict[str, Any], processed_user_messages: Set[int], processed_assistant_messages: Set[int]) -> str:
     """Convert an event_msg payload into a rendered HTML block."""
     event_type = payload.get("type")
-    
-    
-    if event_type not in ["agent_message", "user_message"]:
-        return ""
     text = payload.get("message", "")
+
     if not text:
         return ""
+
     if event_type == "user_message":
         if not _should_emit_text(text, processed_user_messages):
             return ""
         return _build_message_html("User", "role-user-chat", ICON_USER, text)
-    if not _should_emit_text(text, processed_events_other):
-        return ""
-    return _build_message_html("Assistant", "role-assistant", ICON_ASSISTANT, text)
+
+    elif event_type == "agent_message":
+        if not _should_emit_text(text, processed_assistant_messages):
+            return ""
+        return _build_message_html("Assistant", "role-assistant", ICON_ASSISTANT, text)
+    
+    return ""
 
 
-def _build_response_message(payload: Dict[str, Any], processed_user_events: Set[int], processed_events_other: Set[int]) -> str:
+def _build_response_message(payload: Dict[str, Any], processed_user_events: Set[int], processed_assistant_messages: Set[int], processed_events_other: Set[int]) -> str:
     """Convert a response message payload into HTML."""
-    role = payload.get("role", "unknown").capitalize()
+    
+    role = payload.get("role", "unknown")
     text = extract_text_content(payload.get("content"))
+
     if not text:
         return ""
-    role_l = role.lower()
-    if role_l == "user":
-        if not _should_emit_text(text, processed_user_events):
-            return ""
-        return _build_message_html(role, "role-user-log", ICON_USER, text)
-    if role_l in ["assistant", "model"]:
-        if not _should_emit_text(text, processed_events_other):
-            return ""
-        return _build_message_html(role, "role-assistant", ICON_ASSISTANT, text)
-    if not _should_emit_text(text, processed_events_other):
+
+    # 2. Configuration Dictionary: Maps role_key -> (CSS_Class, Icon, Deduplication_Set)
+    role_config = {
+        "user":      ("role-user-log",  ICON_USER,      processed_user_events),
+        "assistant": ("role-assistant", ICON_ASSISTANT, processed_assistant_messages),
+        "default":   ("role-developer", ICON_GEAR,      processed_events_other)
+    }
+    
+    # 3. Lookup: Use lower() for logic only
+    css_class, icon, processed_set = role_config.get(role.lower(), role_config["default"])
+
+    if not _should_emit_text(text, processed_set):
         return ""
-    return _build_message_html(role, "role-developer", ICON_GEAR, text)
+
+    return _build_message_html(role.capitalize(), css_class, icon, text)
 
 
-def _build_response_item(payload: Dict[str, Any], processed_user_events: Set[int], processed_events_other: Set[int]) -> str:
+def _build_response_item(payload: Dict[str, Any], processed_user_events: Set[int], processed_assistant_messages: Set[int], processed_events_other: Set[int]) -> str:
     """Render response_item records into message HTML."""
     item_type = payload.get("type")
     if item_type == "message":
-        return _build_response_message(payload, processed_user_events, processed_events_other)
+        return _build_response_message(payload, processed_user_events, processed_assistant_messages, processed_events_other)
     if item_type == "reasoning":
         text = extract_text_content(payload.get("summary", []))
         return _build_reasoning_html(text) if text else ""
@@ -1099,9 +1106,24 @@ def convert_single_file(
         index_href      = _path_to_href(os.path.relpath(os.path.join(output_folder, "codex_sessions_overview.html"), output_dir))  # Create hypertext reference back to Overview file
         html_parts      = [get_html_header(session_date, index_href=index_href)]
 
-        processed_user_messages     = set() # hashes of user chat text messages
-        processed_user_events       = set() # hashes of user chat events (contains additional context apart from the user's prompt)
-        processed_events_other      = set() # hashes of everything non-User (Assitant/Tool/Dev)
+        processed_user_messages         = set()     # hashes of user chat text messages
+        processed_user_events           = set()     # hashes of user chat events (contains additional context apart from the user's prompt)
+        processed_assistant_messages    = set()    # hashes of all assistant text
+        processed_events_other          = set()     # hashes of Tool/Dev
+
+        processing_map = {
+            # --- For Event Messages (Keys = 'type') ---
+            "user_message":  ("User",      "role-user-chat", ICON_USER,      processed_user_messages),
+            "agent_message": ("Assistant", "role-assistant", ICON_ASSISTANT, processed_assistant_messages),
+
+            # --- For Response Items (Keys = 'role') ---
+            "user":          ("User",      "role-user-log",  ICON_USER,      processed_user_events),
+            "assistant":     ("Assistant", "role-assistant", ICON_ASSISTANT, processed_assistant_messages),
+            
+            # --- Defaults/Fallbacks ---
+            "developer":     ("Developer", "role-developer", ICON_GEAR,      processed_events_other),
+            "default":       ("Developer", "role-developer", ICON_GEAR,      processed_events_other),
+        }
 
         rendered_message_count = 0  # number of non-empty message blocks added to the html output
 
@@ -1120,12 +1142,13 @@ def convert_single_file(
                     html_block = _build_event_message(
                         payload,
                         processed_user_messages,
-                        processed_events_other,
+                        processed_assistant_messages,
                     )
                 elif msg_type == "response_item":
                     html_block = _build_response_item(
                         payload,
                         processed_user_events,
+                        processed_assistant_messages,
                         processed_events_other,
                     )
                 else:
