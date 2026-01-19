@@ -7,7 +7,7 @@ The script preserves the original JSONL order.
 
 Log structure notes:
 - "event_msg" entries in the log are what the user sees as chat-style messages (user/assistant), 
-    ("token_count" message is ignored, and "agent_reasoning" is dealth with in the section below
+    ("token_count" message is ignored, and "agent_reasoning" is dealth with in the section "response_item"
 
 - "response_item" entries seem to represent the actual history passed back and forth to the LLM. Below are its subcategories:
     
@@ -507,8 +507,7 @@ def _should_emit_text(text: str, seen_set: Set[int]) -> bool:
     """Determine if text is unique and should be included in the html output.
 
     This function filters out empty strings and exact duplicates. It uses
-    hashing to track seen content, which is more memory-efficient
-    than storing full string copies in the set.
+    hashing to track seen content.
 
     Args:
         text (str): The string content to check.
@@ -592,24 +591,26 @@ def _build_tool_output_html(output: str) -> str:
     )
 
 
-def _build_event_message(payload: Dict[str, Any], seen_hashes_events: Set[int], seen_hashes_other: Set[int]) -> str:
+def _build_event_message(payload: Dict[str, Any], processed_user_messages: Set[int], processed_events_other: Set[int]) -> str:
     """Convert an event_msg payload into a rendered HTML block."""
     event_type = payload.get("type")
+    
+    
     if event_type not in ["agent_message", "user_message"]:
         return ""
     text = payload.get("message", "")
     if not text:
         return ""
     if event_type == "user_message":
-        if not _should_emit_text(text, seen_hashes_events):
+        if not _should_emit_text(text, processed_user_messages):
             return ""
         return _build_message_html("User", "role-user-chat", ICON_USER, text)
-    if not _should_emit_text(text, seen_hashes_other):
+    if not _should_emit_text(text, processed_events_other):
         return ""
     return _build_message_html("Assistant", "role-assistant", ICON_ASSISTANT, text)
 
 
-def _build_response_message(payload: Dict[str, Any], seen_hashes_stream: Set[int], seen_hashes_other: Set[int]) -> str:
+def _build_response_message(payload: Dict[str, Any], processed_user_events: Set[int], processed_events_other: Set[int]) -> str:
     """Convert a response message payload into HTML."""
     role = payload.get("role", "unknown").capitalize()
     text = extract_text_content(payload.get("content"))
@@ -617,23 +618,23 @@ def _build_response_message(payload: Dict[str, Any], seen_hashes_stream: Set[int
         return ""
     role_l = role.lower()
     if role_l == "user":
-        if not _should_emit_text(text, seen_hashes_stream):
+        if not _should_emit_text(text, processed_user_events):
             return ""
         return _build_message_html(role, "role-user-log", ICON_USER, text)
     if role_l in ["assistant", "model"]:
-        if not _should_emit_text(text, seen_hashes_other):
+        if not _should_emit_text(text, processed_events_other):
             return ""
         return _build_message_html(role, "role-assistant", ICON_ASSISTANT, text)
-    if not _should_emit_text(text, seen_hashes_other):
+    if not _should_emit_text(text, processed_events_other):
         return ""
     return _build_message_html(role, "role-developer", ICON_GEAR, text)
 
 
-def _build_response_item(payload: Dict[str, Any], seen_hashes_stream: Set[int], seen_hashes_other: Set[int]) -> str:
+def _build_response_item(payload: Dict[str, Any], processed_user_events: Set[int], processed_events_other: Set[int]) -> str:
     """Render response_item records into message HTML."""
     item_type = payload.get("type")
     if item_type == "message":
-        return _build_response_message(payload, seen_hashes_stream, seen_hashes_other)
+        return _build_response_message(payload, processed_user_events, processed_events_other)
     if item_type == "reasoning":
         text = extract_text_content(payload.get("summary", []))
         return _build_reasoning_html(text) if text else ""
@@ -1052,12 +1053,15 @@ def _build_index_html(entries: List[Dict[str, Any]]) -> str:
 
 def write_index_html_for_folder(input_folder: str, output_folder: str) -> str:
     """Write the overview HTML file for a folder and return its path."""
+
     os.makedirs(output_folder, exist_ok=True)
     entries = _collect_index_entries(input_folder, output_folder)
     html_content = _build_index_html(entries)
     output_path = os.path.join(output_folder, "codex_sessions_overview.html")
+
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html_content)
+
     return output_path
 
 
@@ -1091,13 +1095,13 @@ def convert_single_file(
         with open(input_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
 
-        session_date = get_session_date(lines)
-        index_href = _path_to_href(os.path.relpath(os.path.join(output_folder, "codex_sessions_overview.html"), output_dir))  # Create hypertext reference back to Overview file
-        html_parts = [get_html_header(session_date, index_href=index_href)]
+        session_date    = get_session_date(lines)
+        index_href      = _path_to_href(os.path.relpath(os.path.join(output_folder, "codex_sessions_overview.html"), output_dir))  # Create hypertext reference back to Overview file
+        html_parts      = [get_html_header(session_date, index_href=index_href)]
 
-        seen_hashes_events = set()  # hashes of event_msg chat text (user/assistant) to avoid duplicating the same chat line
-        seen_hashes_stream = set()  # hashes of response_item user stream text to suppress repeated user log fragments
-        seen_hashes_other = set()   # hashes of response_item assistant/tool/developer text to keep those outputs de-duplicated
+        processed_user_messages     = set() # hashes of user chat text messages
+        processed_user_events       = set() # hashes of user chat events (contains additional context apart from the user's prompt)
+        processed_events_other      = set() # hashes of everything non-User (Assitant/Tool/Dev)
 
         rendered_message_count = 0  # number of non-empty message blocks added to the html output
 
@@ -1115,14 +1119,14 @@ def convert_single_file(
                 if msg_type == "event_msg":
                     html_block = _build_event_message(
                         payload,
-                        seen_hashes_events,
-                        seen_hashes_other,
+                        processed_user_messages,
+                        processed_events_other,
                     )
                 elif msg_type == "response_item":
                     html_block = _build_response_item(
                         payload,
-                        seen_hashes_stream,
-                        seen_hashes_other,
+                        processed_user_events,
+                        processed_events_other,
                     )
                 else:
                     html_block = ""
