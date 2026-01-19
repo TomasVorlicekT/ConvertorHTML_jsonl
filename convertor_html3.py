@@ -38,6 +38,7 @@ from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+import traceback
 
 DATE_FORMAT = "%d.%m.%Y %H:%M:%S"
 TOOL_OUTPUT_TRUNCATE_LIMIT = 4000   # Tool Output can be large, 4000 chosen as a reasonable middle-ground
@@ -591,57 +592,49 @@ def _build_tool_output_html(output: str) -> str:
     )
 
 
-def _build_event_message(payload: Dict[str, Any], processed_user_messages: Set[int], processed_assistant_messages: Set[int]) -> str:
+def _build_event_message(payload: Dict[str, Any],blabla,  processing_map: Dict[str, tuple]) -> str:
     """Convert an event_msg payload into a rendered HTML block."""
-    event_type = payload.get("type")
+
+    msg_type = payload.get("type")
     text = payload.get("message", "")
 
-    if not text:
+    config = processing_map.get(msg_type)  # Either user_message or agent_message
+
+    if not config or not text:
+        return ""
+    
+    display_name, css_class, icon, seen_set = config
+
+    if not _should_emit_text(text, seen_set):
         return ""
 
-    if event_type == "user_message":
-        if not _should_emit_text(text, processed_user_messages):
-            return ""
-        return _build_message_html("User", "role-user-chat", ICON_USER, text)
-
-    elif event_type == "agent_message":
-        if not _should_emit_text(text, processed_assistant_messages):
-            return ""
-        return _build_message_html("Assistant", "role-assistant", ICON_ASSISTANT, text)
-    
-    return ""
+    return _build_message_html(display_name, css_class, icon, text)
 
 
-def _build_response_message(payload: Dict[str, Any], processed_user_events: Set[int], processed_assistant_messages: Set[int], processed_events_other: Set[int]) -> str:
+def _build_response_message(payload: Dict[str, Any], processing_map: Dict[str, tuple]) -> str:
     """Convert a response message payload into HTML."""
     
     role = payload.get("role", "unknown")
     text = extract_text_content(payload.get("content"))
 
-    if not text:
+    config = processing_map.get(role.lower(), processing_map.get("default"))
+
+    if not config or not text:
         return ""
 
-    # 2. Configuration Dictionary: Maps role_key -> (CSS_Class, Icon, Deduplication_Set)
-    role_config = {
-        "user":      ("role-user-log",  ICON_USER,      processed_user_events),
-        "assistant": ("role-assistant", ICON_ASSISTANT, processed_assistant_messages),
-        "default":   ("role-developer", ICON_GEAR,      processed_events_other)
-    }
-    
-    # 3. Lookup: Use lower() for logic only
-    css_class, icon, processed_set = role_config.get(role.lower(), role_config["default"])
+    display_name, css_class, icon, seen_set = config
 
-    if not _should_emit_text(text, processed_set):
+    if not _should_emit_text(text, seen_set):
         return ""
 
-    return _build_message_html(role.capitalize(), css_class, icon, text)
+    return _build_message_html(display_name, css_class, icon, text)
 
 
-def _build_response_item(payload: Dict[str, Any], processed_user_events: Set[int], processed_assistant_messages: Set[int], processed_events_other: Set[int]) -> str:
+def _build_response_item(payload: Dict[str, Any], processing_map: Dict[str, tuple]) -> str:
     """Render response_item records into message HTML."""
     item_type = payload.get("type")
     if item_type == "message":
-        return _build_response_message(payload, processed_user_events, processed_assistant_messages, processed_events_other)
+        return _build_response_message(payload, processing_map)
     if item_type == "reasoning":
         text = extract_text_content(payload.get("summary", []))
         return _build_reasoning_html(text) if text else ""
@@ -1108,7 +1101,7 @@ def convert_single_file(
 
         processed_user_messages         = set()     # hashes of user chat text messages
         processed_user_events           = set()     # hashes of user chat events (contains additional context apart from the user's prompt)
-        processed_assistant_messages    = set()    # hashes of all assistant text
+        processed_assistant_messages    = set()     # hashes of all assistant text
         processed_events_other          = set()     # hashes of Tool/Dev
 
         processing_map = {
@@ -1131,6 +1124,7 @@ def convert_single_file(
             line = line.strip()
             if not line:
                 continue
+
             try:
                 data = _parse_json_line(line)
                 if data is None:
@@ -1139,25 +1133,25 @@ def convert_single_file(
                 payload = data.get("payload", {})
 
                 if msg_type == "event_msg":
-                    html_block = _build_event_message(
-                        payload,
-                        processed_user_messages,
-                        processed_assistant_messages,
-                    )
+                    html_block = _build_event_message(payload, processing_map)
                 elif msg_type == "response_item":
-                    html_block = _build_response_item(
-                        payload,
-                        processed_user_events,
-                        processed_assistant_messages,
-                        processed_events_other,
-                    )
+                    html_block = _build_response_item(payload, processing_map)
                 else:
                     html_block = ""
 
                 if html_block:
                     html_parts.append(html_block)
                     rendered_message_count += 1
-            except Exception:
+            except Exception as e:
+                print(f"Error on line: {line[:50]}...")
+                traceback.print_exc()
+                
+                error_html = (
+                    f'<div style="border: 2px solid red; background: #fee; color: red; padding: 10px; margin: 10px 0;">'
+                    f'<strong>Conversion Error:</strong> {html.escape(str(e))}'
+                    f'</div>'
+                )
+                html_parts.append(error_html)
                 continue
 
         html_parts.append(get_html_footer())
