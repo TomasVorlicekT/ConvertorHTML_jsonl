@@ -592,7 +592,7 @@ def _build_tool_output_html(output: str) -> str:
     )
 
 
-def _build_event_message(payload: Dict[str, Any],blabla,  processing_map: Dict[str, tuple]) -> str:
+def _build_event_message(payload: Dict[str, Any], processing_map: Dict[str, tuple]) -> str:
     """Convert an event_msg payload into a rendered HTML block."""
 
     msg_type = payload.get("type")
@@ -1064,7 +1064,6 @@ def write_index_html_for_folder(input_folder: str, output_folder: str) -> str:
 
     return output_path
 
-
 def convert_single_file(
     input_path: str,
     output_folder: Optional[str] = None,
@@ -1074,52 +1073,64 @@ def convert_single_file(
 
     Args:
         input_path: Path to the JSONL input file.
-        output_folder: Destination folder for output files. Defaults to the
-            input file's folder.
-        input_root: Root folder used to mirror input structure. Defaults to
-            the input file's folder.
+        output_folder: Destination folder for output files. Defaults to the input file's folder.
+        input_root: Root folder used to mirror input structure. Defaults to the input file's folder.
 
     Returns:
-        Tuple (success, message). On success, the output HTML is written
-        under the output folder in the converted_sessions subfolder.
+        Tuple (success, message). On success, the output HTML is written under the output folder in the converted_sessions subfolder.
     """
+    # 1. Path Setup
     output_folder = output_folder or os.path.dirname(input_path)
     input_root = input_root or os.path.dirname(input_path)
+    
     rel_path = os.path.relpath(input_path, input_root)
     rel_base, _ = os.path.splitext(rel_path)
+    
     output_path = os.path.join(output_folder, "converted_sessions", rel_base + ".html")
     output_dir = os.path.dirname(output_path)
 
     try:
         os.makedirs(output_dir, exist_ok=True)
+        
+        # Performance Note: readlines() loads the whole file into RAM, but the logs are not that large that it should cause problem
         with open(input_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
 
-        session_date    = get_session_date(lines)
-        index_href      = _path_to_href(os.path.relpath(os.path.join(output_folder, "codex_sessions_overview.html"), output_dir))  # Create hypertext reference back to Overview file
-        html_parts      = [get_html_header(session_date, index_href=index_href)]
+        session_date = get_session_date(lines)
+        
+        overview_rel_path = os.path.relpath(
+            os.path.join(output_folder, "codex_sessions_overview.html"), 
+            output_dir
+        )
+        index_href = _path_to_href(overview_rel_path)  # Create hypertext reference back to Overview file
 
-        processed_user_messages         = set()     # hashes of user chat text messages
-        processed_user_events           = set()     # hashes of user chat events (contains additional context apart from the user's prompt)
-        processed_assistant_messages    = set()     # hashes of all assistant text
-        processed_events_other          = set()     # hashes of Tool/Dev
+        # 3. Initialize State
+        html_parts = [get_html_header(session_date, index_href=index_href)]
+        
+        processed_user_messages: Set[int]      = set()  # hashes of user chat text messages
+        processed_user_events: Set[int]        = set()  # hashes of user chat events (contains additional context apart from the user's prompt)
+        processed_assistant_messages: Set[int] = set()  # hashes of all assistant text
+        processed_events_other: Set[int]       = set()  # hashes of Tool/Dev
 
-        processing_map = {
-            # --- For Event Messages (Keys = 'type') ---
+        # 4. Configuration Map
+        # Structure: Key -> (Display Name, CSS Class, Icon, Hash Set)
+        processing_map: Dict[str, Tuple[str, str, str, Set[int]]] = {
+            # --- Event Messages (Key = 'type') ---
             "user_message":  ("User",      "role-user-chat", ICON_USER,      processed_user_messages),
             "agent_message": ("Assistant", "role-assistant", ICON_ASSISTANT, processed_assistant_messages),
 
-            # --- For Response Items (Keys = 'role') ---
+            # --- Response Items (Key = 'role') ---
             "user":          ("User",      "role-user-log",  ICON_USER,      processed_user_events),
             "assistant":     ("Assistant", "role-assistant", ICON_ASSISTANT, processed_assistant_messages),
             
-            # --- Defaults/Fallbacks ---
+            # --- Fallbacks ---
             "developer":     ("Developer", "role-developer", ICON_GEAR,      processed_events_other),
             "default":       ("Developer", "role-developer", ICON_GEAR,      processed_events_other),
         }
 
-        rendered_message_count = 0  # number of non-empty message blocks added to the html output
+        rendered_message_count = 0
 
+        # 5. Main Loop
         for line in lines:
             line = line.strip()
             if not line:
@@ -1129,46 +1140,54 @@ def convert_single_file(
                 data = _parse_json_line(line)
                 if data is None:
                     continue
+                
                 msg_type = data.get("type")
                 payload = data.get("payload", {})
+                html_block = ""
 
+                # Dispatch logic
                 if msg_type == "event_msg":
                     html_block = _build_event_message(payload, processing_map)
                 elif msg_type == "response_item":
                     html_block = _build_response_item(payload, processing_map)
-                else:
-                    html_block = ""
 
                 if html_block:
                     html_parts.append(html_block)
                     rendered_message_count += 1
+
             except Exception as e:
-                print(f"Error on line: {line[:50]}...")
+                # 6. Error Handling: Log to console AND inject into HTML
+                print(f"Error on line: {line[:100]}...")
                 traceback.print_exc()
                 
                 error_html = (
-                    f'<div style="border: 2px solid red; background: #fee; color: red; padding: 10px; margin: 10px 0;">'
+                    f'<div style="border: 2px solid #ef4444; background: #fef2f2; color: #b91c1c; '
+                    f'padding: 12px; margin: 16px 0; border-radius: 8px; font-family: monospace;">'
                     f'<strong>Conversion Error:</strong> {html.escape(str(e))}'
                     f'</div>'
                 )
                 html_parts.append(error_html)
                 continue
 
+        # 7. Finalization
         html_parts.append(get_html_footer())
 
         if rendered_message_count == 0:
             return False, "Empty/Invalid Log"
+
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write("".join(html_parts))
+
         write_index_html_for_folder(input_root, output_folder)
         return True, "Done"
+
     except Exception as e:
         return False, str(e)
 
 
-# ==========================================
-# PART 2: THE GUI (Thread-Safe Version)
-# ==========================================
+# =================
+# PART 2: THE GUI
+# =================
 
 
 class BatchConverterGUI:
