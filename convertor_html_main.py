@@ -40,7 +40,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import traceback
 
-from html_rendering import (
+from convertor_html_rendering import (
     ICON_ASSISTANT,
     ICON_GEAR,
     ICON_USER,
