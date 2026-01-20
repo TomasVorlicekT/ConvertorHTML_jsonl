@@ -1,5 +1,8 @@
 """
 HTML rendering helpers for Codex JSONL conversion.
+
+Most AI generated part, regexes untouched, html/css/JS only lightly modified.
+
 """
 
 import html
