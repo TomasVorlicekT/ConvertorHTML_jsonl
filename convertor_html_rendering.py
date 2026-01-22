@@ -296,6 +296,7 @@ def get_html_header(date_str: str = "", index_href: str = "codex_sessions_overvi
         .message.role-user-log {{ background-color: #f7f9fb; border-right: 6px dashed #7aa7d8; color: #4b5563; }}
         .message.role-assistant {{ background-color: #f0fbf9; border-left: 6px solid var(--accent); }}
         .message.role-developer {{ background-color: #fff6f0; border-left: 6px solid var(--accent-2); border: 1px dashed rgba(224, 122, 95, 0.4); }}
+        .message.role-model-info {{ background-color: #e9e9f5; border-left: 6px solid var(--accent-2); border: 1px dashed rgba(224, 122, 95, 0.4); }}
         .message.type-tool-call {{ background-color: #f0fafa; border-left: 6px solid #2aa198; }}
         .message.type-tool-output {{ background-color: #1f2937; color: #e5e7eb; border-left: 6px solid #6b7280; padding: 18px; border-radius: var(--radius-md); border-top-left-radius: 6px; }}
         .message.type-reasoning {{ background-color: #f8fafb; border-left: 6px solid #9ca3af; }}
@@ -351,6 +352,7 @@ def get_html_header(date_str: str = "", index_href: str = "codex_sessions_overvi
         <hr style="border: 0; border-top: 1px solid #eee;">
         <div class="filter-group"><input type="checkbox" id="check-developer"><label for="check-developer">Developer / System</label></div>
         <div class="filter-group"><input type="checkbox" id="check-tool-output"><label for="check-tool-output">Tool Outputs</label></div>
+        <div class="filter-group"><input type="checkbox" id="check-used-model"><label for="check-used-model">Model Info</label></div>
         <hr style="border: 0; border-top: 1px solid #eee;">
         <div class="filter-group"><a class="index-link" href="{index_href}">&#127968; Overview</a></div>
     </div>
@@ -379,7 +381,8 @@ def get_html_footer() -> str:
         'check-developer': 'role-developer',
         'check-reasoning': 'type-reasoning',
         'check-tools': 'type-tool-call',
-        'check-tool-output': 'type-tool-output'
+        'check-tool-output': 'type-tool-output',
+        'check-used-model': 'role-model-info'
     };
     function applyFilters(){ 
         for(const[id,cls] of Object.entries(filters)){ 
@@ -528,6 +531,24 @@ def _build_response_message(payload: Dict[str, Any], processing_map: Dict[str, t
     if not _should_emit_text(text, seen_set):
         return ""
 
+    return _build_message_html(display_name, css_class, icon, text)
+
+
+def _build_turn_context_message(payload: Dict[str, Any], processing_map: Dict[str, tuple]) -> str:
+    """Convert a turn context message with model/reasoning payload into a rendered HTML block."""
+    
+    # Log example: "model":"gpt-5.2-codex","effort":"medium"
+    model_type = payload.get("model")
+    effort_type = payload.get("effort", "")
+
+    if not model_type:
+        return ""
+
+    text = f"**Used model:** {model_type} \n**Reasoning Effort:** {effort_type}"
+
+    config = processing_map.get("turn_context")
+    display_name, css_class, icon, _ = config
+    
     return _build_message_html(display_name, css_class, icon, text)
 
 

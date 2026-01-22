@@ -25,6 +25,8 @@ Log structure notes:
 
     "type":"reasoning": The internal "Chain of Thought" summary used by the model.
 
+- "turn_context" contains the information about the used model and reasoning effort
+
 - ("token_count" tell us the tokens statistics) => IGNORED
 
 """
@@ -48,6 +50,7 @@ from convertor_html_rendering import (
     _build_event_message,
     _build_index_html,
     _build_response_item,
+    _build_turn_context_message,
     get_html_footer,
     get_html_header,
 )
@@ -267,7 +270,7 @@ def convert_single_file(
     try:
         os.makedirs(output_dir, exist_ok=True)
         
-        # Performance Note: readlines() loads the whole file into RAM, but the logs are not that large that it should cause problem
+        # Performance Note: readlines() loads the whole file into memory, but the logs are not that large that it should cause problem
         with open(input_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
 
@@ -286,21 +289,25 @@ def convert_single_file(
         processed_user_events: Set[int]        = set()  # hashes of user chat events (contains additional context apart from the user's prompt)
         processed_assistant_messages: Set[int] = set()  # hashes of all assistant text
         processed_events_other: Set[int]       = set()  # hashes of Tool/Dev
+        processed_turn_contexts: Set[int]      = set()  # hashes of Turn Context Info, currently not used
 
         # 4. Configuration Map
         # Structure: Key -> (Display Name, CSS Class, Icon, Hash Set)
         processing_map: Dict[str, Tuple[str, str, str, Set[int]]] = {
             # --- Event Messages (Key = 'type') ---
-            "user_message":  ("User",      "role-user-chat", ICON_USER,      processed_user_messages),
-            "agent_message": ("Assistant", "role-assistant", ICON_ASSISTANT, processed_assistant_messages),
+            "user_message":  ("User",      "role-user-chat",   ICON_USER,      processed_user_messages),
+            "agent_message": ("Assistant", "role-assistant",   ICON_ASSISTANT, processed_assistant_messages),
 
             # --- Response Items (Key = 'role') ---
-            "user":          ("User",      "role-user-log",  ICON_USER,      processed_user_events),
-            "assistant":     ("Assistant", "role-assistant", ICON_ASSISTANT, processed_assistant_messages),
+            "user":          ("User",      "role-user-log",    ICON_USER,      processed_user_events),
+            "assistant":     ("Assistant", "role-assistant",   ICON_ASSISTANT, processed_assistant_messages),
             
             # --- Fallbacks ---
-            "developer":     ("Developer", "role-developer", ICON_GEAR,      processed_events_other),
-            "default":       ("Developer", "role-developer", ICON_GEAR,      processed_events_other),
+            "developer":     ("Developer", "role-developer",   ICON_GEAR,      processed_events_other),
+            "default":       ("Developer", "role-developer",   ICON_GEAR,      processed_events_other),
+
+            # --- Turn Context ---
+            "turn_context":  ("Model Info", "role-model-info", ICON_GEAR,      processed_turn_contexts),
         }
 
         rendered_message_count = 0
@@ -325,6 +332,8 @@ def convert_single_file(
                     html_block = _build_event_message(payload, processing_map)
                 elif msg_type == "response_item":
                     html_block = _build_response_item(payload, processing_map)
+                elif msg_type == "turn_context":
+                    html_block = _build_turn_context_message(payload, processing_map)
 
                 if html_block:
                     html_parts.append(html_block)
