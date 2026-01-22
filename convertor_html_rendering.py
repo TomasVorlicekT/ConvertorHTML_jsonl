@@ -21,7 +21,7 @@ CODE_BLOCK_PLACEHOLDER_PREFIX = "__CODE_BLOCK_"
 
 ICON_USER           = "\N{BUST IN SILHOUETTE}"
 ICON_QUESTION       = "\N{BLACK QUESTION MARK ORNAMENT}"
-ICON_USER_REQUEST   = f"{ICON_USER}{ICON_QUESTION}"
+ICON_USER_REQUEST   = f"{ICON_QUESTION}"
 ICON_ASSISTANT      = "\N{ROBOT FACE}"
 ICON_REASONING      = "\N{BRAIN}"
 ICON_TOOL           = "\N{HAMMER AND WRENCH}"
@@ -37,9 +37,10 @@ NEWLINES_BEFORE_HEADER_PATTERN = re.compile(r"\n{2,}(?=#)")
 NEWLINES_PATTERN = re.compile(r"\n{3,}")
 MY_REQUEST_HEADER_PATTERN = re.compile(r"(?m)^#+\s+My request for Codex:?")
 HEADER_PATTERNS = [
-    (re.compile(r"(?m)^# (.*?)$"), r"<h2>\1</h2>"),
-    (re.compile(r"(?m)^## (.*?)$"), r"<h3>\1</h3>"),
-    (re.compile(r"(?m)^### (.*?)$"), r"<h4>\1</h4>"),
+    (re.compile(r"(?m)^# (.*?)$"), r"<h1>\1</h2>"),
+    (re.compile(r"(?m)^## (.*?)$"), r"<h2>\1</h3>"),
+    (re.compile(r"(?m)^### (.*?)$"), r"<h3>\1</h4>"),
+    (re.compile(r"(?m)^#### (.*?)$"), r"<h4>\1</h4>"),
 ]
 STRONG_PATTERN = re.compile(r"\*\*(.*?)\*\*")
 INLINE_CODE_PATTERN = re.compile(r"`([^`]+)`")
