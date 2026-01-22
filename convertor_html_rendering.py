@@ -348,7 +348,7 @@ def get_html_header(date_str: str = "", index_href: str = "codex_sessions_overvi
         <div class="filter-group"><input type="checkbox" id="check-user-log"><label for="check-user-log">User (Stream Logs)</label></div>
         <div class="filter-group"><input type="checkbox" id="check-assistant" checked><label for="check-assistant">Assistant</label></div>
         <div class="filter-group"><input type="checkbox" id="check-reasoning" checked><label for="check-reasoning">Reasoning</label></div>
-        <div class="filter-group"><input type="checkbox" id="check-tools" checked><label for="check-tools">Tool Calls</label></div>
+        <div class="filter-group"><input type="checkbox" id="check-tools"><label for="check-tools">Tool Calls</label></div>
         <hr style="border: 0; border-top: 1px solid #eee;">
         <div class="filter-group"><input type="checkbox" id="check-developer"><label for="check-developer">Developer / System</label></div>
         <div class="filter-group"><input type="checkbox" id="check-tool-output"><label for="check-tool-output">Tool Outputs</label></div>
@@ -731,6 +731,14 @@ def _build_index_html(entries: List[Dict[str, Any]]) -> str:
         }}
         .no-results.visible {{ display: block; }}
 
+        mark.highlight {{
+            background-color: #fde047; /* Yellow */
+            color: #374151;
+            padding: 0;
+            margin: 0;
+            border-radius: 2px;
+        }}
+
         table.entries {{ 
             width: 100%;
             border-collapse: collapse;
@@ -831,6 +839,74 @@ def _build_index_html(entries: List[Dict[str, Any]]) -> str:
         const folders = Array.from(document.querySelectorAll('details.folder'));
         const noResults = document.getElementById('no-results');
 
+        // --- NEW: Helper to remove existing highlights ---
+        function clearHighlights(root) {{
+            // Find all marks and replace them with their text content
+            const marks = root.querySelectorAll('mark.highlight');
+            for (const mark of marks) {{
+                const parent = mark.parentNode;
+                parent.replaceChild(document.createTextNode(mark.textContent), mark);
+                parent.normalize(); // Merge adjacent text nodes
+            }}
+        }}
+
+        // --- NEW: Helper to add highlights safely ---
+        function highlightText(root, query) {{
+            if (!query) return;
+            
+            // Escape special regex characters in the query
+            const escapedQuery = query.replace(/[.*+?^${{}}()|[\\]\\\\]/g, '\\\\$&');
+            const regex = new RegExp('(' + escapedQuery + ')', 'gi');
+
+            // TreeWalker traverses only Text Nodes, avoiding HTML tags
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+            const nodesToProcess = [];
+
+            while (walker.nextNode()) {{
+                const node = walker.currentNode;
+                // Skip if parent is script/style
+                if (node.parentNode.tagName === 'SCRIPT' || node.parentNode.tagName === 'STYLE') continue;
+                
+                if (node.nodeValue.toLowerCase().includes(query)) {{
+                    nodesToProcess.push(node);
+                }}
+            }}
+
+            // Replace matched text nodes with fragments containing <mark>
+            for (const node of nodesToProcess) {{
+                const val = node.nodeValue;
+                const parent = node.parentNode;
+                
+                // Double check match still exists (in case of overlaps)
+                if (regex.test(val)) {{
+                    const fragment = document.createDocumentFragment();
+                    let lastIdx = 0;
+                    
+                    val.replace(regex, (match, p1, offset) => {{
+                        // Append text before match
+                        if (offset > lastIdx) {{
+                            fragment.appendChild(document.createTextNode(val.substring(lastIdx, offset)));
+                        }}
+                        // Append highlighted match
+                        const mark = document.createElement('mark');
+                        mark.className = 'highlight';
+                        mark.textContent = match;
+                        fragment.appendChild(mark);
+                        
+                        lastIdx = offset + match.length;
+                        return match; // Return value not strictly needed for replace loop
+                    }});
+                    
+                    // Append text after last match
+                    if (lastIdx < val.length) {{
+                        fragment.appendChild(document.createTextNode(val.substring(lastIdx)));
+                    }}
+                    
+                    parent.replaceChild(fragment, node);
+                }}
+            }}
+        }}
+
         function updateFolderVisibility(query) {{
             for (const folder of folders) {{
                 folder.classList.add('hidden');
@@ -850,14 +926,25 @@ def _build_index_html(entries: List[Dict[str, Any]]) -> str:
 
         function applyFilter() {{
             const query = searchBox.value.trim().toLowerCase();
+            
             for (const row of rows) {{
+                // 1. Clean up previous highlights first
+                clearHighlights(row);
+
+                // 2. Check visibility - even the hidden full text is searched
                 const text = (row.textContent + " " + (row.dataset.prompt || "")).toLowerCase();
+                
                 if (!query || text.includes(query)) {{
                     row.classList.remove('hidden');
+                    // 3. Apply new highlights if query exists
+                    if (query) {{
+                        highlightText(row, query);
+                    }}
                 }} else {{
                     row.classList.add('hidden');
                 }}
             }}
+            
             updateFolderVisibility(query);
             const hasVisibleRows = document.querySelector('tr.entry-row:not(.hidden)');
             if (hasVisibleRows) {{
